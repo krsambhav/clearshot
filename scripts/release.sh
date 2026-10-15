@@ -17,7 +17,7 @@ sed -i '' "s/MARKETING_VERSION: \"$OLD\"/MARKETING_VERSION: \"$VERSION\"/" proje
 sed -i '' "s/CURRENT_PROJECT_VERSION: \"[0-9]*\"/CURRENT_PROJECT_VERSION: \"$BUILD\"/" project.yml
 
 xcodegen generate --quiet
-xcodebuild -project ClearShot.xcodeproj -scheme ClearShot -configuration Release -derivedDataPath build clean build -quiet
+xcodebuild -project ClearShot.xcodeproj -scheme ClearShot -configuration Release -derivedDataPath build -destination "generic/platform=macOS" clean build -quiet
 
 mkdir -p dist
 rm -f dist/ClearShot.zip
