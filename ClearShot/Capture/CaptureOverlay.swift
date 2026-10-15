@@ -170,7 +170,7 @@ final class OverlayView: NSView {
         crosshairLayer.contentsScale = scale
         root.addSublayer(crosshairLayer)
 
-        selectionLayer.fillColor = nil
+        selectionLayer.fillColor = NSColor.black.withAlphaComponent(0.15).cgColor
         selectionLayer.strokeColor = Theme.overlayInk.cgColor
         selectionLayer.lineWidth = 1
         selectionLayer.shadowColor = NSColor.black.cgColor
