@@ -22,6 +22,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotkeyCenter.shared.install()
         HistoryStore.shared.prune()
         LaunchAtLogin.enableByDefault()
+        if Preferences.shared.saveToFolder {
+            try? FileManager.default.createDirectory(at: Preferences.shared.exportFolder, withIntermediateDirectories: true)
+        }
 
         if !Preferences.shared.hasCompletedOnboarding || !ScreenPermission.isGranted {
             OnboardingWindowController.shared.show(startAtPermission: Preferences.shared.hasCompletedOnboarding)

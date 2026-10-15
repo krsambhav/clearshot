@@ -65,7 +65,7 @@ final class Preferences {
         hasCompletedOnboarding = d.bool(forKey: "hasCompletedOnboarding")
         copyToClipboard = d.object(forKey: "copyToClipboard") as? Bool ?? true
         saveToFolder = d.object(forKey: "saveToFolder") as? Bool ?? true
-        exportFolderPath = d.string(forKey: "exportFolderPath") ?? "~/Desktop"
+        exportFolderPath = d.string(forKey: "exportFolderPath") ?? "~/Documents/ClearShot"
         imageFormat = ImageFormat(rawValue: d.string(forKey: "imageFormat") ?? "") ?? .png
         downscaleRetina = d.bool(forKey: "downscaleRetina")
         playSounds = d.object(forKey: "playSounds") as? Bool ?? true
