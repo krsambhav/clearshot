@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotkeyCenter.shared.onTrigger = { action in AppController.shared.perform(action) }
         HotkeyCenter.shared.install()
         HistoryStore.shared.prune()
+        LaunchAtLogin.enableByDefault()
 
         if !Preferences.shared.hasCompletedOnboarding || !ScreenPermission.isGranted {
             OnboardingWindowController.shared.show(startAtPermission: Preferences.shared.hasCompletedOnboarding)
@@ -67,6 +68,10 @@ enum MainMenu {
         let appItem = NSMenuItem()
         let appMenu = NSMenu()
         appMenu.addItem(ClosureMenuItem(title: "About ClearShot") { SettingsWindowController.shared.show(.about) })
+        appMenu.addItem(ClosureMenuItem(title: "Check for Updates…") {
+            SettingsWindowController.shared.show(.about)
+            Task { await Updater.shared.check() }
+        })
         appMenu.addItem(.separator())
         appMenu.addItem(ClosureMenuItem(title: "Settings…", keyEquivalent: ",") { SettingsWindowController.shared.show() })
         appMenu.addItem(ClosureMenuItem(title: "History", keyEquivalent: "y") { HistoryWindowController.shared.show() })

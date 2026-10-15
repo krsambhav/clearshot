@@ -413,6 +413,7 @@ private struct AboutView: View {
                     .textStyle(.body)
                     .foregroundStyle(Theme.mutedForeground)
             }
+            UpdateControl()
             Text("A fast, open-source screenshot and text-capture tool for macOS. Free forever, no account, no cloud.")
                 .textStyle(.body)
                 .foregroundStyle(Theme.foreground)
@@ -430,6 +431,54 @@ private struct AboutView: View {
                 .textStyle(.footnote)
                 .foregroundStyle(Theme.mutedForeground)
                 .frame(maxWidth: 420, alignment: .leading)
+        }
+    }
+}
+
+private struct UpdateControl: View {
+    private let updater = Updater.shared
+
+    var body: some View {
+        HStack(spacing: Space.sm) {
+            switch updater.state {
+            case let .available(version, url):
+                Button {
+                    Task { await updater.install(from: url) }
+                } label: {
+                    Label("Update to \(version)", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.shad(.primary, size: .sm))
+                Text("ClearShot will restart.")
+                    .textStyle(.footnote)
+                    .foregroundStyle(Theme.mutedForeground)
+            case .installing:
+                ProgressView().controlSize(.small)
+                Text("Downloading update…")
+                    .textStyle(.footnote)
+                    .foregroundStyle(Theme.mutedForeground)
+            default:
+                Button {
+                    Task { await updater.check() }
+                } label: {
+                    Label("Check for updates", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .buttonStyle(.shad(.outline, size: .sm))
+                .disabled(updater.state == .checking)
+                if let status {
+                    Text(status)
+                        .textStyle(.footnote)
+                        .foregroundStyle(Theme.mutedForeground)
+                }
+            }
+        }
+    }
+
+    private var status: String? {
+        switch updater.state {
+        case .checking: "Checking…"
+        case .upToDate: "You're on the latest version."
+        case let .failed(message): message
+        default: nil
         }
     }
 }

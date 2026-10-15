@@ -145,6 +145,16 @@ enum LaunchAtLogin {
         SMAppService.mainApp.status == .enabled
     }
 
+    /// Turns the login item on once, the first time an installed copy launches.
+    /// After that the user's choice in Settings sticks.
+    static func enableByDefault() {
+        let key = "loginItemDefaultApplied"
+        guard !UserDefaults.standard.bool(forKey: key),
+              Bundle.main.bundleURL.deletingLastPathComponent().lastPathComponent == "Applications" else { return }
+        UserDefaults.standard.set(true, forKey: key)
+        if !isEnabled { set(true) }
+    }
+
     static func set(_ enabled: Bool) {
         do {
             if enabled {

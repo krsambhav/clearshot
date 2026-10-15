@@ -134,6 +134,7 @@ private struct MenuEntry: Identifiable {
     let title: String
     let symbol: String
     var shortcut: Shortcut?
+    var isOn: Bool?
     let action: () -> Void
 }
 
@@ -162,6 +163,14 @@ private struct StatusMenu: View {
         [
             MenuEntry(id: "history", title: "History", symbol: "clock.arrow.circlepath", shortcut: prefs.shortcuts[.openHistory]) {
                 close(); HistoryWindowController.shared.show()
+            },
+            MenuEntry(id: "sounds", title: "Capture sounds", symbol: prefs.playSounds ? "speaker.wave.2" : "speaker.slash", isOn: prefs.playSounds) {
+                prefs.playSounds.toggle()
+            },
+            MenuEntry(id: "update", title: "Check for Updates…", symbol: "arrow.triangle.2.circlepath") {
+                close()
+                SettingsWindowController.shared.show(.about)
+                Task { await Updater.shared.check() }
             },
             MenuEntry(id: "settings", title: "Settings…", symbol: "gearshape", shortcut: Shortcut(keyCode: 43, modifiers: .command)) {
                 close(); SettingsWindowController.shared.show()
@@ -261,7 +270,11 @@ private struct MenuRow: View {
                     .textStyle(.body)
                     .foregroundStyle(Theme.foreground)
                 Spacer(minLength: Space.md)
-                if let shortcut = entry.shortcut, !shortcut.isEmpty {
+                if let isOn = entry.isOn {
+                    Toggle("", isOn: .constant(isOn)).toggleStyle(.shad).labelsHidden()
+                        .scaleEffect(0.8)
+                        .allowsHitTesting(false)
+                } else if let shortcut = entry.shortcut, !shortcut.isEmpty {
                     Text(shortcut.displayString)
                         .font(.jakarta(12, .medium))
                         .tracking(1.5)
