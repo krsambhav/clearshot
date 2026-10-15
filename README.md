@@ -23,11 +23,13 @@ Works on any Mac running macOS 15 or later (Apple silicon and Intel). It install
 
 | Shortcut | Action |
 |---|---|
-| ⌥⇧⌘2 | Capture text |
-| ⌥⇧⌘3 | Capture fullscreen |
-| ⌥⇧⌘4 | Capture area |
-| ⌥⇧⌘5 | Capture window |
-| ⌥⇧⌘H | Open history |
+| ⇧⌘2 | Capture text |
+| ⇧⌘3 | Capture fullscreen |
+| ⇧⌘4 | Capture area |
+| ⇧⌘5 | Capture window |
+| ⇧⌘H | Open history |
+
+⇧⌘3, ⇧⌘4 and ⇧⌘5 are also the macOS screenshot shortcuts. To let ClearShot handle them, turn those off in System Settings → Keyboard → Keyboard Shortcuts → Screenshots. You can also change any shortcut in ClearShot's settings.
 
 URL scheme for launchers like Raycast and Alfred: `clearshot://capture-area`, `capture-window`, `capture-fullscreen`, `capture-text`, `history`, `settings`.
 

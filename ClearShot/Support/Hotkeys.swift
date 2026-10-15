@@ -27,11 +27,11 @@ enum HotkeyAction: String, CaseIterable, Codable, Identifiable {
     }
 
     static let defaults: [HotkeyAction: Shortcut] = [
-        .captureText: Shortcut(keyCode: UInt32(kVK_ANSI_2), modifiers: [.command, .shift, .option]),
-        .captureFullscreen: Shortcut(keyCode: UInt32(kVK_ANSI_3), modifiers: [.command, .shift, .option]),
-        .captureArea: Shortcut(keyCode: UInt32(kVK_ANSI_4), modifiers: [.command, .shift, .option]),
-        .captureWindow: Shortcut(keyCode: UInt32(kVK_ANSI_5), modifiers: [.command, .shift, .option]),
-        .openHistory: Shortcut(keyCode: UInt32(kVK_ANSI_H), modifiers: [.command, .shift, .option]),
+        .captureText: Shortcut(keyCode: UInt32(kVK_ANSI_2), modifiers: [.command, .shift]),
+        .captureFullscreen: Shortcut(keyCode: UInt32(kVK_ANSI_3), modifiers: [.command, .shift]),
+        .captureArea: Shortcut(keyCode: UInt32(kVK_ANSI_4), modifiers: [.command, .shift]),
+        .captureWindow: Shortcut(keyCode: UInt32(kVK_ANSI_5), modifiers: [.command, .shift]),
+        .openHistory: Shortcut(keyCode: UInt32(kVK_ANSI_H), modifiers: [.command, .shift]),
     ]
 }
 

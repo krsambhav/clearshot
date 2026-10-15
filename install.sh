@@ -35,4 +35,4 @@ xattr -dr com.apple.quarantine "$DEST/ClearShot.app" 2>/dev/null || true
 
 echo "✓ Installed to $DEST/ClearShot.app"
 open "$DEST/ClearShot.app"
-echo "  ClearShot is in your menu bar. Allow Screen Recording when asked, then press ⌥⇧⌘2 to copy text from anywhere."
+echo "  ClearShot is in your menu bar. Allow Screen Recording when asked, then press ⇧⌘2 to copy text from anywhere."
