@@ -252,10 +252,6 @@ private struct CaptureSettings: View {
             FieldRow(title: "Crosshair", description: "Full-screen guides for lining up a selection.") {
                 Toggle("", isOn: $prefs.showCrosshair).toggleStyle(.shad).labelsHidden()
             }
-            ShadSeparator()
-            FieldRow(title: "Magnifier", description: "A pixel loupe that follows the pointer.") {
-                Toggle("", isOn: $prefs.showMagnifier).toggleStyle(.shad).labelsHidden()
-            }
         }
     }
 

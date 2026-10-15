@@ -15,7 +15,7 @@ Works on any Mac running macOS 15 or later (Apple silicon and Intel). It install
 ## Features
 
 - **Capture text (OCR):** select any area and the text is on your clipboard instantly (Apple Vision, on-device). Also reads QR codes and barcodes.
-- **Area, window and fullscreen capture:** the screen freezes on capture; there's a pixel magnifier, crosshair, Space to switch to window mode, ⇧ for square, ⌥ to draw from the center.
+- **Area, window and fullscreen capture:** the screen freezes on capture; there's a crosshair, Space to switch to window mode, ⇧ for square, ⌥ to draw from the center.
 - **Quick Access:** a thumbnail after every capture. Drag it into any app, or hover to copy, save, annotate or pin.
 - **Pin to screen:** floating, always-on-top screenshots. Scroll or pinch to zoom, right-click for opacity.
 - **Annotate:** arrow, line, rectangle, ellipse, pen, highlighter, text, numbered counters, pixelate/blur, spotlight and crop, plus a background frame for sharing. Edits are non-destructive.

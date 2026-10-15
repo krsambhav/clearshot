@@ -14,7 +14,7 @@ enum OverlayOutcome {
 }
 
 /// Presents a frozen copy of every display and lets the user pick an area or a window.
-/// Built on Core Animation so the marquee and loupe track the pointer every frame.
+/// Built on Core Animation so the marquee and crosshair track the pointer every frame.
 @MainActor
 final class CaptureOverlayController {
     let purpose: CapturePurpose
@@ -112,12 +112,10 @@ final class OverlayView: NSView {
     private unowned let controller: CaptureOverlayController
 
     private let imageLayer = CALayer()
-    private let scrimLayer = CAShapeLayer()
     private let crosshairLayer = CAShapeLayer()
     private let selectionLayer = CAShapeLayer()
     private let windowLayer = CAShapeLayer()
     private let sizeChip = ChipLayer()
-    private let magnifier = MagnifierLayer()
     private var hint: NSView?
 
     private var mouse: CGPoint?
@@ -158,11 +156,6 @@ final class OverlayView: NSView {
         imageLayer.contentsScale = scale
         root.addSublayer(imageLayer)
 
-        scrimLayer.frame = bounds
-        scrimLayer.fillRule = .evenOdd
-        scrimLayer.fillColor = Theme.scrim.cgColor
-        root.addSublayer(scrimLayer)
-
         windowLayer.fillColor = Theme.nsBrand.withAlphaComponent(0.16).cgColor
         windowLayer.strokeColor = Theme.nsBrand.cgColor
         windowLayer.lineWidth = 2
@@ -190,11 +183,7 @@ final class OverlayView: NSView {
         sizeChip.isHidden = true
         root.addSublayer(sizeChip)
 
-        magnifier.configure(scale: scale)
-        magnifier.isHidden = true
-        root.addSublayer(magnifier)
-
-        for layer in [scrimLayer, crosshairLayer, selectionLayer, windowLayer, sizeChip, magnifier] as [CALayer] {
+        for layer in [crosshairLayer, selectionLayer, windowLayer, sizeChip] as [CALayer] {
             layer.actions = ["path": NSNull(), "position": NSNull(), "bounds": NSNull(), "hidden": NSNull(), "opacity": NSNull(), "contents": NSNull()]
         }
     }
@@ -247,27 +236,17 @@ final class OverlayView: NSView {
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
 
-        let full = CGPath(rect: bounds, transform: nil)
-
         if controller.windowPicking {
             crosshairLayer.isHidden = true
             selectionLayer.isHidden = true
             sizeChip.isHidden = true
-            magnifier.isHidden = true
             if let window = hoveredWindow {
                 let rect = window.frame.offsetBy(dx: -snapshot.frame.minX, dy: -snapshot.frame.minY).intersection(bounds)
                 let rounded = CGPath(roundedRect: rect.insetBy(dx: 1, dy: 1), cornerWidth: 10, cornerHeight: 10, transform: nil)
                 windowLayer.path = rounded
                 windowLayer.isHidden = rect.isNull
-                let scrim = CGMutablePath()
-                scrim.addPath(full)
-                scrim.addPath(rounded)
-                scrimLayer.path = scrim
-                scrimLayer.opacity = 0.8
             } else {
                 windowLayer.isHidden = true
-                scrimLayer.path = full
-                scrimLayer.opacity = 0.8
             }
             return
         }
@@ -275,18 +254,11 @@ final class OverlayView: NSView {
         windowLayer.isHidden = true
 
         if let selection = selectionRect, selection.width >= 1, selection.height >= 1 {
-            let scrim = CGMutablePath()
-            scrim.addPath(full)
-            scrim.addRect(selection)
-            scrimLayer.path = scrim
-            scrimLayer.opacity = 1
             selectionLayer.isHidden = false
             selectionLayer.path = CGPath(rect: selection.insetBy(dx: -0.5, dy: -0.5), transform: nil)
             crosshairLayer.isHidden = true
             layoutSizeChip(for: selection)
         } else {
-            scrimLayer.path = full
-            scrimLayer.opacity = 0.3
             selectionLayer.isHidden = true
             sizeChip.isHidden = true
             if let mouse, Preferences.shared.showCrosshair {
@@ -302,13 +274,6 @@ final class OverlayView: NSView {
             } else {
                 crosshairLayer.isHidden = true
             }
-        }
-
-        if let mouse, Preferences.shared.showMagnifier, !movingSelection {
-            magnifier.isHidden = false
-            magnifier.update(image: snapshot.image, pixel: pixelPoint(for: mouse), viewPoint: mouse, in: bounds)
-        } else {
-            magnifier.isHidden = true
         }
     }
 
@@ -358,10 +323,6 @@ final class OverlayView: NSView {
             width: (rect.width * scale).rounded(),
             height: (rect.height * scale).rounded()
         )
-    }
-
-    private func pixelPoint(for point: CGPoint) -> (x: Int, y: Int) {
-        (Int((point.x * scale).rounded(.down)), Int(((bounds.height - point.y) * scale).rounded(.down)))
     }
 
     private func clamp(_ point: CGPoint) -> CGPoint {
@@ -531,107 +492,6 @@ nonisolated final class ChipLayer: CALayer {
         super.layoutSublayers()
         let size = attributed.size()
         textLayer.frame = CGRect(x: 0, y: (bounds.height - ceil(size.height)) / 2, width: bounds.width, height: ceil(size.height))
-    }
-}
-
-/// Pixel loupe: shows a 15×15 pixel neighbourhood at 8× with a centre marker and coordinates.
-nonisolated final class MagnifierLayer: CALayer {
-    private let pixelsAcross = 15
-    private let cell: CGFloat = 8
-    private let lens = CALayer()
-    private let content = CALayer()
-    private let grid = CAShapeLayer()
-    private let marker = CAShapeLayer()
-    private let chip = ChipLayer()
-
-    private var lensSize: CGFloat { CGFloat(pixelsAcross) * cell }
-
-    override init() { super.init() }
-    override init(layer: Any) { super.init(layer: layer) }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    func configure(scale: CGFloat) {
-        contentsScale = scale
-
-        lens.frame = CGRect(x: 0, y: 26 + 6, width: lensSize, height: lensSize)
-        lens.cornerRadius = 12
-        lens.cornerCurve = .continuous
-        lens.masksToBounds = true
-        lens.backgroundColor = NSColor.black.cgColor
-        lens.borderWidth = 1
-        lens.borderColor = NSColor.white.withAlphaComponent(0.85).cgColor
-        addSublayer(lens)
-
-        content.magnificationFilter = .nearest
-        content.contentsGravity = .resize
-        lens.addSublayer(content)
-
-        let gridPath = CGMutablePath()
-        for i in 1 ..< pixelsAcross {
-            let p = CGFloat(i) * cell
-            gridPath.move(to: CGPoint(x: p, y: 0)); gridPath.addLine(to: CGPoint(x: p, y: lensSize))
-            gridPath.move(to: CGPoint(x: 0, y: p)); gridPath.addLine(to: CGPoint(x: lensSize, y: p))
-        }
-        grid.path = gridPath
-        grid.strokeColor = NSColor.black.withAlphaComponent(0.08).cgColor
-        grid.lineWidth = 1 / scale
-        grid.frame = lens.bounds
-        lens.addSublayer(grid)
-
-        let center = CGFloat(pixelsAcross / 2) * cell
-        marker.path = CGPath(rect: CGRect(x: center, y: center, width: cell, height: cell), transform: nil)
-        marker.fillColor = nil
-        marker.strokeColor = NSColor.white.cgColor
-        marker.lineWidth = 1.5
-        marker.shadowColor = NSColor.black.cgColor
-        marker.shadowOpacity = 0.6
-        marker.shadowRadius = 0.5
-        marker.shadowOffset = .zero
-        marker.frame = lens.bounds
-        lens.addSublayer(marker)
-
-        chip.contentsScale = scale
-        addSublayer(chip)
-
-        shadowColor = NSColor.black.cgColor
-        shadowOpacity = 0.3
-        shadowRadius = 10
-        shadowOffset = CGSize(width: 0, height: -4)
-
-        bounds = CGRect(x: 0, y: 0, width: lensSize, height: lensSize + 32)
-        anchorPoint = .zero
-
-        for layer in [lens, content, grid, marker, chip] as [CALayer] {
-            layer.actions = ["contents": NSNull(), "position": NSNull(), "bounds": NSNull(), "frame": NSNull()]
-        }
-    }
-
-    func update(image: CGImage, pixel: (x: Int, y: Int), viewPoint: CGPoint, in container: CGRect) {
-        let half = pixelsAcross / 2
-        let want = CGRect(x: pixel.x - half, y: pixel.y - half, width: pixelsAcross, height: pixelsAcross)
-        let have = want.intersection(CGRect(x: 0, y: 0, width: image.width, height: image.height))
-        if !have.isNull, let crop = image.cropping(to: have) {
-            content.contents = crop
-            // Image rows run top-down; layer y runs bottom-up.
-            content.frame = CGRect(
-                x: (have.minX - want.minX) * cell,
-                y: (want.maxY - have.maxY) * cell,
-                width: have.width * cell,
-                height: have.height * cell
-            )
-        }
-
-        chip.setText("\(pixel.x), \(pixel.y)")
-        let chipSize = chip.preferredFrameSize()
-        chip.frame = CGRect(x: (lensSize - chipSize.width) / 2, y: 0, width: chipSize.width, height: chipSize.height)
-
-        let gap: CGFloat = 22
-        var origin = CGPoint(x: viewPoint.x + gap, y: viewPoint.y - gap - bounds.height)
-        if origin.x + bounds.width > container.maxX - 8 { origin.x = viewPoint.x - gap - bounds.width }
-        if origin.y < container.minY + 8 { origin.y = viewPoint.y + gap }
-        position = origin
     }
 }
 

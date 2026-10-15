@@ -94,7 +94,6 @@ nonisolated enum Theme {
     static let ring = brand.opacity(0.45)
 
     /// Overlay colors are appearance-independent: they sit on top of the user's pixels.
-    static let scrim = NSColor(oklch: 0.12, 0.01, hue, alpha: 0.5)
     static let overlayInk = NSColor(oklch: 0.99, 0.002, hue)
     static let overlayChip = NSColor(oklch: 0.18, 0.01, hue, alpha: 0.88)
 }
