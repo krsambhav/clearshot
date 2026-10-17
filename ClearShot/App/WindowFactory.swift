@@ -88,16 +88,23 @@ extension WindowFactory {
     static func installTitlebar<Content: View>(in window: NSWindow, @ViewBuilder content: () -> Content) {
         guard let main = window.contentView else { return }
         let container = NSView(frame: main.frame)
-        main.frame = container.bounds
-        main.autoresizingMask = [.width, .height]
         window.contentView = container
-        container.addSubview(main)
-
         let bar = TitlebarHostingView(rootView: content())
         bar.sizingOptions = []
-        bar.frame = CGRect(x: 0, y: container.bounds.height - WindowMetrics.titleBand, width: container.bounds.width, height: WindowMetrics.titleBand)
-        bar.autoresizingMask = [.width, .minYMargin]
-        container.addSubview(bar)
+        for view in [main, bar] as [NSView] {
+            view.translatesAutoresizingMaskIntoConstraints = false
+            container.addSubview(view)
+        }
+        NSLayoutConstraint.activate([
+            main.topAnchor.constraint(equalTo: container.topAnchor),
+            main.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            main.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            main.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            bar.topAnchor.constraint(equalTo: container.topAnchor),
+            bar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            bar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            bar.heightAnchor.constraint(equalToConstant: WindowMetrics.titleBand),
+        ])
     }
 }
 
