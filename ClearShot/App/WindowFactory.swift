@@ -79,3 +79,28 @@ enum WindowMetrics {
 struct TitlebarSpacer: View {
     var body: some View { Color.clear.frame(height: WindowMetrics.titleBand) }
 }
+
+extension WindowFactory {
+    /// Lays `content` over the window's title band in its own AppKit view, above everything
+    /// else. Controls there must sit outside the main hosting view: scroll views extend up
+    /// under the title bar and win SwiftUI's hit testing, and AppKit would otherwise treat a
+    /// mouse-down in the band as the start of a window drag.
+    static func installTitlebar<Content: View>(in window: NSWindow, @ViewBuilder content: () -> Content) {
+        guard let main = window.contentView else { return }
+        let container = NSView(frame: main.frame)
+        main.frame = container.bounds
+        main.autoresizingMask = [.width, .height]
+        window.contentView = container
+        container.addSubview(main)
+
+        let bar = TitlebarHostingView(rootView: content())
+        bar.sizingOptions = []
+        bar.frame = CGRect(x: 0, y: container.bounds.height - WindowMetrics.titleBand, width: container.bounds.width, height: WindowMetrics.titleBand)
+        bar.autoresizingMask = [.width, .minYMargin]
+        container.addSubview(bar)
+    }
+}
+
+final class TitlebarHostingView<Content: View>: NSHostingView<Content> {
+    override var mouseDownCanMoveWindow: Bool { false }
+}

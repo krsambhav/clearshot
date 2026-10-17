@@ -9,7 +9,8 @@ struct EditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            EditorToolbar(model: model, actions: actions)
+            // The toolbar itself is installed over this band by EditorController.
+            TitlebarSpacer()
             ShadSeparator()
             HStack(spacing: 0) {
                 ZStack {
@@ -105,7 +106,7 @@ struct EditorActions {
 
 // MARK: - Toolbar
 
-private struct EditorToolbar: View {
+struct EditorToolbar: View {
     @Bindable var model: EditorModel
     let actions: EditorActions
 
@@ -151,8 +152,7 @@ private struct EditorToolbar: View {
         }
         .padding(.horizontal, Space.md)
         .frame(height: WindowMetrics.titleBand)
-        // Drag the window from the empty band only; a gesture on the HStack itself
-        // swallows clicks on every button inside it.
+        // Drag the window from the empty band only.
         .background(Theme.background.gesture(WindowDragGesture()))
     }
 }

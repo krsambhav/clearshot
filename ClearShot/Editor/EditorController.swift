@@ -52,6 +52,7 @@ final class EditorController {
         let window = WindowFactory.make(title: record.baseName, size: size, minSize: CGSize(width: 900, height: 560)) {
             EditorView(model: model, actions: actions)
         }
+        WindowFactory.installTitlebar(in: window) { EditorToolbar(model: model, actions: actions) }
         window.backgroundColor = Theme.nsBackground
         let delegate = EditorWindowDelegate { [weak self] in self?.windowWillClose(id) }
         window.delegate = delegate
