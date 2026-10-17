@@ -17,7 +17,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .counter: "Counter"
         case .marker: "Highlighter"
         case .pen: "Pen"
-        case .redact: "Redact"
+        case .redact: "Blur"
         case .spotlight: "Spotlight"
         case .crop: "Crop"
         }
@@ -34,7 +34,7 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .counter: "1.circle"
         case .marker: "highlighter"
         case .pen: "scribble"
-        case .redact: "eye.slash"
+        case .redact: "drop.halffull"
         case .spotlight: "light.max"
         case .crop: "crop"
         }
@@ -120,7 +120,7 @@ nonisolated struct RGBA: Codable, Hashable {
 }
 
 nonisolated enum RedactStyle: String, Codable, CaseIterable {
-    case pixelate, blur
+    case blur, pixelate
 
     var label: String { self == .pixelate ? "Pixelate" : "Blur" }
 }
@@ -148,7 +148,7 @@ nonisolated struct Annotation: Codable, Identifiable, Hashable {
     var filled = false
     var text = ""
     var number = 0
-    var redactStyle: RedactStyle = .pixelate
+    var redactStyle: RedactStyle = .blur
     var textStyle: TextStyleKind = .plain
 
     var rect: CGRect {

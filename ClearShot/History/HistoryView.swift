@@ -119,7 +119,9 @@ struct HistoryView: View {
         }
         .padding(.horizontal, Space.xl)
         .frame(height: WindowMetrics.titleBand)
-        .gesture(WindowDragGesture())
+        // Drag the window from the empty band only; a gesture on the HStack itself
+        // swallows clicks on every button inside it.
+        .background(Color.clear.contentShape(Rectangle()).gesture(WindowDragGesture()))
     }
 
     private var grid: some View {

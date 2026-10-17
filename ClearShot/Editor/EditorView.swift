@@ -151,8 +151,9 @@ private struct EditorToolbar: View {
         }
         .padding(.horizontal, Space.md)
         .frame(height: WindowMetrics.titleBand)
-        .background(Theme.background)
-        .gesture(WindowDragGesture())
+        // Drag the window from the empty band only; a gesture on the HStack itself
+        // swallows clicks on every button inside it.
+        .background(Theme.background.gesture(WindowDragGesture()))
     }
 }
 
