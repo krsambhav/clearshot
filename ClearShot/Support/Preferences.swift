@@ -71,7 +71,7 @@ final class Preferences {
         playSounds = d.object(forKey: "playSounds") as? Bool ?? true
         showQuickAccess = d.object(forKey: "showQuickAccess") as? Bool ?? true
         quickAccessCorner = QuickAccessCorner(rawValue: d.string(forKey: "quickAccessCorner") ?? "") ?? .bottomLeft
-        quickAccessAutoClose = d.object(forKey: "quickAccessAutoClose") as? Int ?? 15
+        quickAccessAutoClose = d.object(forKey: "quickAccessAutoClose") as? Int ?? 5
         showCrosshair = d.object(forKey: "showCrosshair") as? Bool ?? true
         ocrKeepLineBreaks = d.object(forKey: "ocrKeepLineBreaks") as? Bool ?? true
         ocrDetectCodes = d.object(forKey: "ocrDetectCodes") as? Bool ?? true
