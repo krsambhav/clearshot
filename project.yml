@@ -27,8 +27,8 @@ targets:
         PRODUCT_NAME: ClearShot
         INFOPLIST_FILE: ClearShot/Resources/Info.plist
         GENERATE_INFOPLIST_FILE: NO
-        MARKETING_VERSION: "0.3.8"
-        CURRENT_PROJECT_VERSION: "11"
+        MARKETING_VERSION: "0.3.9"
+        CURRENT_PROJECT_VERSION: "12"
         # Signing is done by scripts/codesign.sh so the identity stays stable across rebuilds.
         CODE_SIGNING_ALLOWED: NO
         CODE_SIGN_IDENTITY: ""
