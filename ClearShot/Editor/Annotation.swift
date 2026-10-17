@@ -120,7 +120,7 @@ nonisolated struct RGBA: Codable, Hashable {
 }
 
 nonisolated enum RedactStyle: String, Codable, CaseIterable {
-    case blur, pixelate
+    case pixelate, blur
 
     var label: String { self == .pixelate ? "Pixelate" : "Blur" }
 }
@@ -148,7 +148,7 @@ nonisolated struct Annotation: Codable, Identifiable, Hashable {
     var filled = false
     var text = ""
     var number = 0
-    var redactStyle: RedactStyle = .blur
+    var redactStyle: RedactStyle = .pixelate
     var textStyle: TextStyleKind = .plain
 
     var rect: CGRect {

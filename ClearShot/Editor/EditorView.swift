@@ -370,6 +370,13 @@ private struct SelectionLayer: View {
                 let rect = CGRect(origin: map(b.origin), size: CGSize(width: b.width * zoom, height: b.height * zoom))
                 context.stroke(Path(roundedRect: rect, cornerRadius: 4), with: .color(brand), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
+            if selected.kind == .redact || selected.kind == .spotlight {
+                // These have no stroke of their own, so outline the area being edited.
+                let r = selected.rect
+                let rect = CGRect(origin: map(r.origin), size: CGSize(width: r.width * zoom, height: r.height * zoom))
+                context.stroke(Path(rect), with: .color(.white), lineWidth: 3)
+                context.stroke(Path(rect), with: .color(brand), lineWidth: 1.5)
+            }
             for (_, point) in handles {
                 let p = map(point)
                 let circle = Path(ellipseIn: CGRect(x: p.x - 5, y: p.y - 5, width: 10, height: 10))

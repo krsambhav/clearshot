@@ -16,7 +16,7 @@ final class EditorModel {
     var color: RGBA = RGBA.palette[0].color
     var sizeIndex = 1
     var shapeFilled = false
-    var redactStyle: RedactStyle = .blur
+    var redactStyle: RedactStyle = .pixelate
     var textStyle: TextStyleKind = .plain
 
     var zoom: CGFloat = 1
