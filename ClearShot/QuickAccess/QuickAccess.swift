@@ -40,6 +40,7 @@ final class QuickAccessController {
     }
 
     func dismiss(_ id: UUID) {
+        if hoveredID == id { hoveredID = nil }
         closeTasks[id]?.cancel()
         closeTasks[id] = nil
         withAnimation(Motion.snappy) { items.removeAll { $0.id == id } }
@@ -177,6 +178,7 @@ private struct QuickAccessCard: View {
             withAnimation(Motion.quick) { hovering = inside }
             controller.setHovered(item.id, hovering: inside)
         }
+        .background(ThumbnailSwipeArea { controller.dismiss(item.id) })
         .onTapGesture { open() }
         .onDrag {
             let url = HistoryStore.shared.imageURL(for: item.record)
@@ -189,7 +191,7 @@ private struct QuickAccessCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         }
         .contextMenu {
-            Button("Copy") { Task { await app.copy(item.record) } }
+            Button("Copy") { copy() }
             Button("Save") { save() }
             Button("Annotate") { open() }
             Button("Pin to Screen") { pin() }
@@ -201,12 +203,7 @@ private struct QuickAccessCard: View {
     private var actions: some View {
         ZStack {
             VStack(spacing: Space.sm) {
-                Button("Copy") {
-                    Task {
-                        await app.copy(item.record)
-                        controller.dismiss(item.id)
-                    }
-                }
+                Button("Copy") { copy() }
                 .buttonStyle(.shad(.secondary, size: .sm))
                 .frame(width: 92)
                 Button("Save") { save() }
@@ -242,11 +239,19 @@ private struct QuickAccessCard: View {
         controller.dismiss(item.id)
     }
 
+    private func copy() {
+        Task {
+            let record = HistoryStore.shared.record(item.id) ?? item.record
+            guard await app.export(record, announce: false) != nil,
+                  await app.copy(record) else { return }
+            controller.dismiss(item.id)
+        }
+    }
+
     private func save() {
         Task {
             let record = HistoryStore.shared.record(item.id) ?? item.record
-            await app.export(record)
-            controller.dismiss(item.id)
+            if await app.export(record) != nil { controller.dismiss(item.id) }
         }
     }
 }

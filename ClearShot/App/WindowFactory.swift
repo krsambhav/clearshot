@@ -13,10 +13,12 @@ enum WindowFactory {
         size: CGSize,
         minSize: CGSize? = nil,
         resizable: Bool = true,
+        standardContent: Bool = false,
         autosaveName: String? = nil,
         @ViewBuilder content: () -> Content
     ) -> NSWindow {
-        var style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable, .fullSizeContentView]
+        var style: NSWindow.StyleMask = [.titled, .closable, .miniaturizable]
+        if !standardContent { style.insert(.fullSizeContentView) }
         if resizable { style.insert(.resizable) }
         let window = NSWindow(contentRect: CGRect(origin: .zero, size: size), styleMask: style, backing: .buffered, defer: false)
         window.title = title
@@ -24,7 +26,7 @@ enum WindowFactory {
         window.titlebarAppearsTransparent = true
         // An empty unified toolbar gives a 52pt title band with the traffic lights centred in it;
         // every header in ClearShot is laid out against that band.
-        window.toolbar = NSToolbar(identifier: "ClearShot.\(title)")
+        if !standardContent { window.toolbar = NSToolbar(identifier: "ClearShot.\(title)") }
         window.toolbarStyle = .unified
         window.toolbar?.showsBaselineSeparator = false
         window.backgroundColor = Theme.nsBackground

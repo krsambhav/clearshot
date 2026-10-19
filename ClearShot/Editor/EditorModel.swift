@@ -22,6 +22,17 @@ final class EditorModel {
     var zoom: CGFloat = 1
     var fitsWindow = true
     var showsBackgroundPanel = false
+    enum ExportOperation { case copy, save }
+    var exportOperation: ExportOperation?
+    var exportMessage: String?
+    var exportFailed = false
+
+    func exportSnapshot() -> EditorModel {
+        commitTextEditing()
+        let snapshot = EditorModel(record: record, image: image, document: document)
+        snapshot.effects = effects
+        return snapshot
+    }
 
     /// Crop being edited while the crop tool is active.
     var pendingCrop: CGRect?
@@ -64,7 +75,7 @@ final class EditorModel {
     var imageSize: CGSize { CGSize(width: image.width, height: image.height) }
     var hasChanges: Bool { document != savedDocument }
 
-    func markSaved() { savedDocument = document }
+    func markSaved(document saved: EditorDocument? = nil) { savedDocument = saved ?? document }
 
     /// Visible region of the image in pixels.
     var contentRect: CGRect {
@@ -136,6 +147,7 @@ final class EditorModel {
         commitTextEditing()
         if tool == .crop && newTool != .crop { pendingCrop = nil }
         tool = newTool
+        if newTool != .select { selection = nil }
         if newTool == .crop {
             selection = nil
             pendingCrop = document.crop ?? CGRect(origin: .zero, size: imageSize)

@@ -71,9 +71,9 @@ extension NSImage {
 // MARK: - Clipboard
 
 enum Clipboard {
-    static func copy(image: CGImage, pngData: Data? = nil, scale: CGFloat = 2) {
+    @discardableResult
+    static func copy(image: CGImage, pngData: Data? = nil, scale: CGFloat = 2) -> Bool {
         let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
         let item = NSPasteboardItem()
         if let png = pngData ?? ImageCodec.encode(image, as: .png, dpiScale: scale) {
             item.setData(png, forType: .png)
@@ -81,7 +81,9 @@ enum Clipboard {
         if let tiff = NSImage(cgImage: image, scale: scale).tiffRepresentation {
             item.setData(tiff, forType: .tiff)
         }
-        pasteboard.writeObjects([item])
+        guard !item.types.isEmpty else { return false }
+        pasteboard.clearContents()
+        return pasteboard.writeObjects([item])
     }
 
     static func copy(text: String) {

@@ -174,21 +174,25 @@ final class AppController {
 
     // MARK: Actions on captures
 
-    func copy(_ record: CaptureRecord, image: CGImage? = nil, announce: Bool = true) async {
+    @discardableResult
+    func copy(_ record: CaptureRecord, image: CGImage? = nil, announce: Bool = true) async -> Bool {
         await history.fileReady(record.id)
         let url = history.imageURL(for: record)
         let png = await Task.detached { try? Data(contentsOf: url) }.value
         var source = image
         if source == nil { source = await history.image(for: record) }
-        guard let source else { return }
-        Clipboard.copy(image: source, pngData: png, scale: record.scale)
+        guard let source, Clipboard.copy(image: source, pngData: png, scale: record.scale) else {
+            ToastCenter.shared.show(.error, "Couldn't copy image", detail: "Please try again.")
+            return false
+        }
         if announce { ToastCenter.shared.show(.success, "Copied to clipboard") }
+        return true
     }
 
     @discardableResult
     func export(_ record: CaptureRecord, image: CGImage? = nil, announce: Bool = true) async -> URL? {
         var source = image
-        if source == nil || record.isAnnotated { source = await history.image(for: record) }
+        if source == nil { source = await history.image(for: record) }
         guard let source else { return nil }
 
         let folder = prefs.exportFolder

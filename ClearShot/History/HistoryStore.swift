@@ -89,14 +89,14 @@ final class HistoryStore {
     }
 
     /// Replaces the current image (e.g. after annotating), keeping the original once.
-    func replaceImage(of id: UUID, with image: CGImage, pngData: Data) {
-        guard var record = record(id) else { return }
+    func replaceImage(of id: UUID, with image: CGImage, pngData: Data) throws {
+        guard var record = record(id) else { throw CocoaError(.fileNoSuchFile) }
         let original = originalURL(for: record)
         let current = imageURL(for: record)
         if !FileManager.default.fileExists(atPath: original.path) {
-            try? FileManager.default.copyItem(at: current, to: original)
+            try FileManager.default.copyItem(at: current, to: original)
         }
-        try? pngData.write(to: current, options: .atomic)
+        try pngData.write(to: current, options: .atomic)
         record.isAnnotated = true
         record.pixelWidth = image.width
         record.pixelHeight = image.height

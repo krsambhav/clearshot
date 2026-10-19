@@ -9,9 +9,21 @@ struct EditorView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // The toolbar itself is installed over this band by EditorController.
-            TitlebarSpacer()
+            EditorToolbar(model: model, actions: actions)
             ShadSeparator()
+            if let message = model.exportMessage {
+                HStack {
+                    Image(systemName: model.exportFailed ? "exclamationmark.circle" : "checkmark.circle")
+                    Text(message).textSelection(.enabled)
+                    Spacer()
+                    Button("Dismiss") { model.exportMessage = nil }.buttonStyle(.plain)
+                }
+                .font(.jakarta(12, .medium))
+                .foregroundStyle(model.exportFailed ? Theme.destructive : Theme.foreground)
+                .padding(.horizontal, Space.lg)
+                .padding(.vertical, Space.sm)
+                .background(Theme.background)
+            }
             HStack(spacing: 0) {
                 ZStack {
                     CanvasArea(model: model, canvasFocused: $canvasFocused)
@@ -35,67 +47,13 @@ struct EditorView: View {
             .clipped()
         }
         .background(Theme.muted.opacity(0.6))
-        .ignoresSafeArea()
         .focusable()
         .focusEffectDisabled()
         .focused($canvasFocused)
         .onAppear { canvasFocused = true }
-        .onKeyPress(phases: .down) { press in handleKey(press) }
-        .background(shortcutButtons)
     }
 
-    private func handleKey(_ press: KeyPress) -> KeyPress.Result {
-        guard model.editingTextID == nil else { return .ignored }
-        if press.modifiers.contains(.command) { return .ignored }
-        switch press.key {
-        case .delete, .deleteForward:
-            model.deleteSelection()
-            return .handled
-        case .escape:
-            if model.tool == .crop { model.cancelCrop() } else { model.selection = nil }
-            return .handled
-        case .return:
-            if model.tool == .crop { model.applyCrop(); return .handled }
-            if let selected = model.selectedAnnotation, selected.kind == .text { model.editingTextID = selected.id; return .handled }
-            return .ignored
-        default:
-            break
-        }
-        if let character = press.characters.lowercased().first,
-           let tool = EditorTool.allCases.first(where: { $0.key == character }) {
-            withAnimation(Motion.quick) { model.select(tool: tool) }
-            return .handled
-        }
-        if let digit = Int(press.characters), (1 ... 8).contains(digit) {
-            model.applyColor(RGBA.palette[digit - 1].color)
-            return .handled
-        }
-        return .ignored
-    }
 
-    /// Hidden buttons give the window its ⌘ shortcuts.
-    private var shortcutButtons: some View {
-        ZStack {
-            Button("") { model.undo() }.keyboardShortcut("z", modifiers: .command)
-                .disabled(model.editingTextID != nil || !model.canUndo)
-            Button("") { model.redo() }.keyboardShortcut("z", modifiers: [.command, .shift])
-                .disabled(model.editingTextID != nil || !model.canRedo)
-            Button("") { actions.copy() }.keyboardShortcut("c", modifiers: .command)
-                .disabled(model.editingTextID != nil)
-            Button("") { actions.save() }.keyboardShortcut("s", modifiers: .command)
-            Button("") { model.fitsWindow = true }.keyboardShortcut("0", modifiers: .command)
-            Button("") { setZoom(model.zoom * 1.25) }.keyboardShortcut("=", modifiers: .command)
-            Button("") { setZoom(model.zoom / 1.25) }.keyboardShortcut("-", modifiers: .command)
-            Button("") { setZoom(1 / model.pointScale) }.keyboardShortcut("1", modifiers: .command)
-        }
-        .opacity(0)
-        .allowsHitTesting(false)
-    }
-
-    private func setZoom(_ value: CGFloat) {
-        model.fitsWindow = false
-        model.zoom = min(max(value, 0.05), 8)
-    }
 }
 
 struct EditorActions {
@@ -119,7 +77,6 @@ struct EditorToolbar: View {
 
     var body: some View {
         HStack(spacing: Space.sm) {
-            Color.clear.frame(width: WindowMetrics.trafficLightsWidth - Space.md)
             HStack(spacing: 2) {
                 ForEach(Array(groups.enumerated()), id: \.offset) { index, group in
                     if index > 0 {
@@ -145,15 +102,17 @@ struct EditorToolbar: View {
                 withAnimation(Motion.snappy) { model.showsBackgroundPanel.toggle() }
             }
             DragOutButton(actions: actions)
-            Button("Copy", action: actions.copy)
+            Button(model.exportOperation == .copy ? "Copying…" : "Copy", action: actions.copy)
                 .buttonStyle(.shad(.outline, size: .sm))
-            Button("Save", action: actions.save)
+                .disabled(model.exportOperation != nil)
+                .help("Save the image, copy it to the clipboard, and close the editor (⌘C)")
+            Button(model.exportOperation == .save ? "Saving…" : "Save", action: actions.save)
                 .buttonStyle(.shad(.primary, size: .sm))
+                .disabled(model.exportOperation != nil)
         }
         .padding(.horizontal, Space.md)
         .frame(height: WindowMetrics.titleBand)
-        // Drag the window from the empty band only.
-        .background(Theme.background.gesture(WindowDragGesture()))
+        .background(Theme.background)
     }
 }
 
