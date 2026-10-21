@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 enum EditorTool: String, CaseIterable, Identifiable {
-    case select, arrow, line, rectangle, ellipse, text, counter, marker, pen, redact, spotlight, crop
+    case select, arrow, line, rectangle, ellipse, text, counter, marker, pen, pixelate, blur, spotlight, crop
 
     var id: String { rawValue }
 
@@ -17,7 +17,8 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .counter: "Counter"
         case .marker: "Highlighter"
         case .pen: "Pen"
-        case .redact: "Blur"
+        case .pixelate: "Pixelate"
+        case .blur: "Blur"
         case .spotlight: "Spotlight"
         case .crop: "Crop"
         }
@@ -34,7 +35,8 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .counter: "1.circle"
         case .marker: "highlighter"
         case .pen: "scribble"
-        case .redact: "drop.halffull"
+        case .pixelate: "checkerboard.rectangle"
+        case .blur: "drop.halffull"
         case .spotlight: "light.max"
         case .crop: "crop"
         }
@@ -51,7 +53,8 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .counter: "n"
         case .marker: "h"
         case .pen: "p"
-        case .redact: "b"
+        case .pixelate: "x"
+        case .blur: "b"
         case .spotlight: "s"
         case .crop: "c"
         }
@@ -67,22 +70,31 @@ enum EditorTool: String, CaseIterable, Identifiable {
         case .counter: .counter
         case .marker: .marker
         case .pen: .pen
-        case .redact: .redact
+        case .pixelate, .blur: .redact
         case .spotlight: .spotlight
         case .select, .crop: nil
         }
     }
 
+    /// The redaction a pixelate or blur tool draws.
+    var redactStyle: RedactStyle? {
+        switch self {
+        case .pixelate: .pixelate
+        case .blur: .blur
+        default: nil
+        }
+    }
+
     var usesColor: Bool {
         switch self {
-        case .redact, .spotlight, .crop, .select: false
+        case .pixelate, .blur, .spotlight, .crop, .select: false
         default: true
         }
     }
 
     var usesSize: Bool {
         switch self {
-        case .redact, .spotlight, .crop, .select: false
+        case .pixelate, .blur, .spotlight, .crop, .select: false
         default: true
         }
     }

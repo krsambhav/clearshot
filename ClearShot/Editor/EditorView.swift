@@ -72,7 +72,7 @@ struct EditorToolbar: View {
         [.select],
         [.arrow, .line, .rectangle, .ellipse, .pen, .marker],
         [.text, .counter],
-        [.redact, .spotlight, .crop],
+        [.pixelate, .blur, .spotlight, .crop],
     ]
 
     var body: some View {
@@ -324,8 +324,9 @@ private struct SelectionLayer: View {
             let brand = Theme.brand
 
             let handles = model.handles(for: selected)
-            if handles.isEmpty || selected.kind == .text {
-                let b = selected.bounds.insetBy(dx: -4 * model.pointScale, dy: -4 * model.pointScale)
+            if !selected.isRectLike && selected.kind != .arrow && selected.kind != .line {
+                // Handles sit on the corners of this outline.
+                let b = selected.bounds
                 let rect = CGRect(origin: map(b.origin), size: CGSize(width: b.width * zoom, height: b.height * zoom))
                 context.stroke(Path(roundedRect: rect, cornerRadius: 4), with: .color(brand), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
             }
@@ -445,11 +446,16 @@ private struct OptionsBar: View {
         return model.tool.usesSize
     }
 
+    /// Pixelate and blur are picked in the toolbar, so the bar only switches an existing one.
+    private var isEmpty: Bool {
+        !showsColor && !showsSize && model.selection == nil
+    }
+
     var body: some View {
         Group {
             if model.tool == .crop {
                 cropBar
-            } else if showsColor || showsSize || activeKind == .redact || model.selection != nil {
+            } else if !isEmpty {
                 styleBar
             }
         }
@@ -458,7 +464,7 @@ private struct OptionsBar: View {
         .background(RoundedRectangle(cornerRadius: Radius.lg + 2, style: .continuous).fill(Theme.popover))
         .overlay(RoundedRectangle(cornerRadius: Radius.lg + 2, style: .continuous).strokeBorder(Theme.border, lineWidth: 1))
         .shadowLg()
-        .opacity(model.tool == .select && model.selection == nil ? 0 : 1)
+        .opacity(model.tool != .crop && isEmpty ? 0 : 1)
         .animation(Motion.quick, value: model.tool)
         .animation(Motion.quick, value: model.selection)
     }
@@ -487,7 +493,7 @@ private struct OptionsBar: View {
                 ShadSeparator(vertical: true).frame(height: 20)
                 ShadTabs(selection: Binding(get: { model.textStyle }, set: { model.applyTextStyle($0) }), options: TextStyleKind.allCases.map { ($0, $0.label) })
             }
-            if activeKind == .redact {
+            if model.selectedAnnotation?.kind == .redact {
                 ShadTabs(selection: Binding(get: { model.redactStyle }, set: { model.applyRedactStyle($0) }), options: RedactStyle.allCases.map { ($0, $0.label) })
             }
             if model.selection != nil {

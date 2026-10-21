@@ -152,7 +152,8 @@ final class EditorModel {
             selection = nil
             pendingCrop = document.crop ?? CGRect(origin: .zero, size: imageSize)
         }
-        if newTool == .redact || newTool == .spotlight { Task { await loadEffects() } }
+        if let style = newTool.redactStyle { redactStyle = style }
+        if newTool.annotationKind == .redact || newTool == .spotlight { Task { await loadEffects() } }
     }
 
     func applyColor(_ newColor: RGBA) {
@@ -297,7 +298,7 @@ final class EditorModel {
 
         var annotation = Annotation(kind: kind, start: point, end: point, color: color, size: strokeWidth)
         annotation.filled = shapeFilled
-        annotation.redactStyle = redactStyle
+        annotation.redactStyle = tool.redactStyle ?? redactStyle
         annotation.textStyle = textStyle
         switch kind {
         case .pen, .marker:
@@ -448,8 +449,12 @@ final class EditorModel {
                 (.topLeft, CGPoint(x: r.minX, y: r.minY)), (.topRight, CGPoint(x: r.maxX, y: r.minY)),
                 (.bottomLeft, CGPoint(x: r.minX, y: r.maxY)), (.bottomRight, CGPoint(x: r.maxX, y: r.maxY)),
             ]
-        default:
-            return []
+        case .text, .counter, .pen, .marker:
+            let r = a.bounds
+            return [
+                (.topLeft, CGPoint(x: r.minX, y: r.minY)), (.topRight, CGPoint(x: r.maxX, y: r.minY)),
+                (.bottomLeft, CGPoint(x: r.minX, y: r.maxY)), (.bottomRight, CGPoint(x: r.maxX, y: r.maxY)),
+            ]
         }
     }
 
@@ -481,6 +486,8 @@ final class EditorModel {
         switch handle {
         case .start: a.start = shift ? snapAngle(from: a.end, to: point) : point
         case .end: a.end = shift ? snapAngle(from: a.start, to: point) : point
+        case _ where !a.isRectLike:
+            scale(&a, handle: handle, to: point)
         default:
             let r = a.rect
             var minX = r.minX, minY = r.minY, maxX = r.maxX, maxY = r.maxY
@@ -492,6 +499,32 @@ final class EditorModel {
             }
             a.start = CGPoint(x: minX, y: minY)
             a.end = CGPoint(x: maxX, y: maxY)
+        }
+    }
+
+    /// Resizes text, counters and freehand strokes by their bounds; the opposite corner stays put.
+    private func scale(_ a: inout Annotation, handle: Handle, to point: CGPoint) {
+        let box = a.bounds
+        let anchor = CGPoint(
+            x: handle == .topLeft || handle == .bottomLeft ? box.maxX : box.minX,
+            y: handle == .topLeft || handle == .topRight ? box.maxY : box.minY
+        )
+        let minSide = 6 * pointScale
+        switch a.kind {
+        case .pen, .marker:
+            // Freehand strokes stretch on each axis; a flat stroke keeps its flat side.
+            let sx = box.width < 1 ? 1 : max(abs(point.x - anchor.x), minSide) / box.width
+            let sy = box.height < 1 ? 1 : max(abs(point.y - anchor.y), minSide) / box.height
+            a.points = a.points.map { CGPoint(x: anchor.x + ($0.x - anchor.x) * sx, y: anchor.y + ($0.y - anchor.y) * sy) }
+        default:
+            // Text and counters scale uniformly by changing their size.
+            let diagonal = hypot(box.width, box.height)
+            guard diagonal > 0 else { return }
+            let target = hypot(point.x - anchor.x, point.y - anchor.y) / diagonal
+            let size = min(max(a.size * target, 1.5 * pointScale), 40 * pointScale)
+            let factor = size / a.size
+            a.size = size
+            a.start = CGPoint(x: anchor.x + (a.start.x - anchor.x) * factor, y: anchor.y + (a.start.y - anchor.y) * factor)
         }
     }
 
