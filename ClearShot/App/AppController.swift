@@ -89,7 +89,7 @@ final class AppController {
             }
             Task {
                 do {
-                    let (image, scale) = try await capturer.capture(window: target)
+                    let (image, scale) = try await capturer.capture(window: target, onWallpaper: prefs.windowWallpaper)
                     handleScreenshot(image, scale: scale)
                 } catch {
                     report(error)

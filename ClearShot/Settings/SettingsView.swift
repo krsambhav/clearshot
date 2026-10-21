@@ -247,6 +247,10 @@ private struct CaptureSettings: View {
             FieldRow(title: "Save Retina captures at 1×", description: "Halves file size; text gets softer.") {
                 Toggle("", isOn: $prefs.downscaleRetina).toggleStyle(.shad).labelsHidden()
             }
+            ShadSeparator()
+            FieldRow(title: "Window background", description: "Place window captures on your wallpaper with a shadow.") {
+                Toggle("", isOn: $prefs.windowWallpaper).toggleStyle(.shad).labelsHidden()
+            }
         }
         SettingsGroup(title: "Selection") {
             FieldRow(title: "Crosshair", description: "Full-screen guides for lining up a selection.") {

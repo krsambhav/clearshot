@@ -83,15 +83,36 @@ final class ScreenCapturer {
     }
 
     /// Captures a single window on its own, so overlapping windows don't bleed in.
-    func capture(window target: WindowTarget) async throws -> (CGImage, CGFloat) {
-        let scale = NSScreen.screens.first { $0.frame.intersects(target.frame) && $0.frame.contains(CGPoint(x: target.frame.midX, y: target.frame.midY)) }?.backingScaleFactor
-            ?? NSScreen.main?.backingScaleFactor ?? 2
+    /// With `onWallpaper`, the window is set on the desktop wallpaper with a shadow.
+    func capture(window target: WindowTarget, onWallpaper: Bool) async throws -> (CGImage, CGFloat) {
+        let screen = NSScreen.screens.first { $0.frame.contains(CGPoint(x: target.frame.midX, y: target.frame.midY)) }
+            ?? NSScreen.main
+        let scale = screen?.backingScaleFactor ?? 2
         let filter = SCContentFilter(desktopIndependentWindow: target.window)
         let config = Self.configuration(size: target.frame.size, scale: scale)
         config.ignoreShadowsSingleWindow = true
         config.shouldBeOpaque = false
         let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
-        return (image, scale)
+
+        guard onWallpaper, let screen else { return (image, scale) }
+        let wallpaper = await (try? captureWallpaper(of: screen)) ?? WindowBackdrop.fallbackWallpaper(for: screen)
+        guard let wallpaper, let composed = WindowBackdrop.compose(window: image, wallpaper: wallpaper, scale: scale) else {
+            return (image, scale)
+        }
+        return (composed, scale)
+    }
+
+    /// Captures the live wallpaper window, so dynamic and aerial wallpapers look as they do on screen.
+    private func captureWallpaper(of screen: NSScreen) async throws -> CGImage? {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+        guard let id = screen.displayID, let display = content.displays.first(where: { $0.displayID == id }) else { return nil }
+        // Everything below the desktop icons: the wallpaper and the backstop under it.
+        let iconLevel = Int(CGWindowLevelForKey(.desktopIconWindow))
+        let layers = content.windows.filter { $0.windowLayer < iconLevel && $0.frame.intersects(display.frame) }
+        guard !layers.isEmpty else { return nil }
+        let filter = SCContentFilter(display: display, including: layers)
+        let config = Self.configuration(size: screen.frame.size, scale: screen.backingScaleFactor)
+        return try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
     }
 
     private static func configuration(size: CGSize, scale: CGFloat) -> SCStreamConfiguration {

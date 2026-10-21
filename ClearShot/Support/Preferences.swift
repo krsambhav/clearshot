@@ -40,6 +40,8 @@ final class Preferences {
 
     // Capture overlay
     var showCrosshair: Bool { didSet { save(showCrosshair, "showCrosshair") } }
+    /// Window captures sit on the desktop wallpaper with a shadow.
+    var windowWallpaper: Bool { didSet { save(windowWallpaper, "windowWallpaper") } }
 
     // Text recognition
     var ocrKeepLineBreaks: Bool { didSet { save(ocrKeepLineBreaks, "ocrKeepLineBreaks") } }
@@ -73,6 +75,7 @@ final class Preferences {
         quickAccessCorner = QuickAccessCorner(rawValue: d.string(forKey: "quickAccessCorner") ?? "") ?? .bottomLeft
         quickAccessAutoClose = d.object(forKey: "quickAccessAutoClose") as? Int ?? 5
         showCrosshair = d.object(forKey: "showCrosshair") as? Bool ?? true
+        windowWallpaper = d.object(forKey: "windowWallpaper") as? Bool ?? true
         ocrKeepLineBreaks = d.object(forKey: "ocrKeepLineBreaks") as? Bool ?? true
         ocrDetectCodes = d.object(forKey: "ocrDetectCodes") as? Bool ?? true
         ocrLanguageCorrection = d.object(forKey: "ocrLanguageCorrection") as? Bool ?? true

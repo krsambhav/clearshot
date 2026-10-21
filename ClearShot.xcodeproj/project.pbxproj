@@ -12,6 +12,7 @@
 		1E14B0856BFD80184CBE1988 /* CaptureOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE5D06B1E27F7A08B13C4507 /* CaptureOverlay.swift */; };
 		264E5E59B2B18C3302944876 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 111486DD329F275588CEBB1B /* AppDelegate.swift */; };
 		2B09A5693783507E8053CFDB /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1809FFA48F2EC3C93917FFBF /* Preferences.swift */; };
+		2D6C7D32605124FFCDE6FAFF /* WindowBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A468FF2BDC9B67EB970FDA62 /* WindowBackdrop.swift */; };
 		301730584039AA2E06703034 /* Toast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E7816695A04ACB4C487F528 /* Toast.swift */; };
 		3C76EAC88BB18CCEBA13E575 /* QuickAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E74B8B280FE558284FF6003C /* QuickAccess.swift */; };
 		43021788D117110997FFF3C0 /* PlusJakartaSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C5403320B39F310C7EA826B5 /* PlusJakartaSans-Medium.ttf */; };
@@ -73,6 +74,7 @@
 		985FB0F16D377B6E0F97D99C /* DebugSnapshots.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugSnapshots.swift; sourceTree = "<group>"; };
 		996E1FEF4E2E70552C2168A0 /* PlusJakartaSans-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlusJakartaSans-Bold.ttf"; sourceTree = "<group>"; };
 		9D166B0618A741AAF5DB9BE2 /* PlusJakartaSans-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlusJakartaSans-Regular.ttf"; sourceTree = "<group>"; };
+		A468FF2BDC9B67EB970FDA62 /* WindowBackdrop.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowBackdrop.swift; sourceTree = "<group>"; };
 		A643D6D3F08EA24BA25B61E0 /* HistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryView.swift; sourceTree = "<group>"; };
 		AE5D06B1E27F7A08B13C4507 /* CaptureOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureOverlay.swift; sourceTree = "<group>"; };
 		C5403320B39F310C7EA826B5 /* PlusJakartaSans-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PlusJakartaSans-Medium.ttf"; sourceTree = "<group>"; };
@@ -240,6 +242,7 @@
 			children = (
 				AE5D06B1E27F7A08B13C4507 /* CaptureOverlay.swift */,
 				69BCD8717F819C6C7293B63F /* ScreenCapturer.swift */,
+				A468FF2BDC9B67EB970FDA62 /* WindowBackdrop.swift */,
 			);
 			path = Capture;
 			sourceTree = "<group>";
@@ -380,6 +383,7 @@
 				7C3D06F5C7AF9FD3C63CECE7 /* Typography.swift in Sources */,
 				43745CE3C406545912DB709B /* Updater.swift in Sources */,
 				CC9138AC633A5E23771912EF /* Utilities.swift in Sources */,
+				2D6C7D32605124FFCDE6FAFF /* WindowBackdrop.swift in Sources */,
 				52AEC4E74B78BF5D6828BF9E /* WindowFactory.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
