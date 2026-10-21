@@ -52,7 +52,6 @@ final class ScreenCapturer {
             throw ScreenPermission.isGranted ? error : CaptureError.permissionDenied
         }
 
-        let ownBundleID = Bundle.main.bundleIdentifier
         // Hide ClearShot's transient chrome (Quick Access, toasts, menu) but keep its real
         // windows capturable, e.g. for screenshots of Settings.
         let ownWindowNumbers = Set(NSApp.windows.filter { $0 is TransientPanel && $0.isVisible }.map { CGWindowID($0.windowNumber) })
@@ -79,7 +78,7 @@ final class ScreenCapturer {
         }
         guard !displays.isEmpty else { throw CaptureError.noDisplay }
 
-        return CaptureSession(displays: displays, windows: Self.windowTargets(from: content, ownBundleID: ownBundleID))
+        return CaptureSession(displays: displays, windows: Self.windowTargets(from: content, hiding: ownWindowNumbers))
     }
 
     /// Captures a single window on its own, so overlapping windows don't bleed in.
@@ -125,7 +124,8 @@ final class ScreenCapturer {
         return config
     }
 
-    private static func windowTargets(from content: SCShareableContent, ownBundleID: String?) -> [WindowTarget] {
+    /// ClearShot's own windows (editor, Settings, History) are pickable like any other app's.
+    private static func windowTargets(from content: SCShareableContent, hiding hidden: Set<CGWindowID>) -> [WindowTarget] {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let excludedOwners: Set<String> = ["com.apple.dock", "com.apple.WindowManager", "com.apple.controlcenter", "com.apple.notificationcenterui"]
 
@@ -139,7 +139,7 @@ final class ScreenCapturer {
                 guard window.isOnScreen, window.windowLayer == 0,
                       window.frame.width > 40, window.frame.height > 40,
                       let app = window.owningApplication else { return false }
-                return app.bundleIdentifier != ownBundleID && !excludedOwners.contains(app.bundleIdentifier)
+                return !hidden.contains(window.windowID) && !excludedOwners.contains(app.bundleIdentifier)
             }
             .sorted { (rank[$0.windowID] ?? .max) < (rank[$1.windowID] ?? .max) }
             .map { window in
