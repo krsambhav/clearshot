@@ -36,6 +36,8 @@ enum DebugSnapshots {
                 await snap(OnboardingView(model: model) {}, size: CGSize(width: 600, height: 520), appearance: appearance, to: folder.appendingPathComponent("onboarding-\(step.rawValue)-\(suffix).png"))
             }
 
+            await snap(StatusMenu(close: {}), size: CGSize(width: 324, height: 520), appearance: appearance, to: folder.appendingPathComponent("menu-\(suffix).png"))
+
             await snap(HistoryView(), size: CGSize(width: 980, height: 660), appearance: appearance, to: folder.appendingPathComponent("history-\(suffix).png"))
 
             if let record = seeded.first {

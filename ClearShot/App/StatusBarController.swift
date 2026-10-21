@@ -138,7 +138,7 @@ private struct MenuEntry: Identifiable {
     let action: () -> Void
 }
 
-private struct StatusMenu: View {
+struct StatusMenu: View {
     let close: () -> Void
 
     @State private var highlighted: String?
@@ -302,14 +302,15 @@ private struct RecentThumb: View {
 
     var body: some View {
         Button(action: action) {
-            ZStack {
-                Theme.muted
-                if let image {
-                    Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+            // The image lives in an overlay so its aspect-fill size can't widen the row.
+            Theme.muted
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .overlay {
+                    if let image {
+                        Image(nsImage: image).resizable().aspectRatio(contentMode: .fill)
+                    }
                 }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
             .clipShape(RoundedRectangle(cornerRadius: Radius.sm, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: Radius.sm, style: .continuous)
