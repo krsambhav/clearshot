@@ -24,6 +24,8 @@ final class CaptureOverlayController {
     private var panels: [OverlayPanel] = []
     private var views: [OverlayView] = []
     private var completion: ((OverlayOutcome) -> Void)?
+    /// The app the user was working in; it gets keyboard focus back when the overlay closes.
+    private var previousApp: NSRunningApplication?
 
     init(session: CaptureSession, purpose: CapturePurpose, startInWindowMode: Bool, completion: @escaping (OverlayOutcome) -> Void) {
         self.session = session
@@ -33,6 +35,8 @@ final class CaptureOverlayController {
     }
 
     func present() {
+        let frontmost = NSWorkspace.shared.frontmostApplication
+        previousApp = frontmost?.processIdentifier == ProcessInfo.processInfo.processIdentifier ? nil : frontmost
         let mouse = NSEvent.mouseLocation
         for snapshot in session.displays {
             let panel = OverlayPanel(screen: snapshot.screen)
@@ -79,7 +83,17 @@ final class CaptureOverlayController {
         panels.removeAll()
         views.removeAll()
         NSCursor.arrow.set()
+        restoreFocus()
         completion(outcome)
+    }
+
+    /// The overlay takes key status to receive keystrokes; once it's gone, macOS doesn't hand that
+    /// back to the previous app's window on its own, so typing would go nowhere.
+    private func restoreFocus() {
+        guard let app = previousApp, !app.isTerminated else { return }
+        previousApp = nil
+        NSApp.yieldActivation(to: app)
+        app.activate()
     }
 }
 

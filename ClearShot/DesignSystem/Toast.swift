@@ -159,4 +159,7 @@ extension NSScreen {
     }
 }
 
-final class ToastPanel: NSPanel, TransientPanel {}
+final class ToastPanel: NSPanel, TransientPanel {
+    override var canBecomeKey: Bool { false }
+    override var canBecomeMain: Bool { false }
+}
