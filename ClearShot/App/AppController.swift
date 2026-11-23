@@ -165,16 +165,19 @@ final class AppController {
             do {
                 let result = try await TextRecognizer.recognize(image, options: options)
                 try Task.checkCancellation()
+                let method = result.method.map { " · \($0.rawValue)" } ?? ""
                 if !result.text.isEmpty {
                     Clipboard.copy(text: result.text)
                     Sounds.playCopied()
                     let words = result.wordCount
-                    ToastCenter.shared.show(.success, "Copied \(words) \(words == 1 ? "word" : "words")", detail: result.text.singleLinePreview)
+                    let title = "Copied \(words) \(words == 1 ? "word" : "words")"
+                    ToastCenter.shared.show(.success, title + method, detail: result.text.singleLinePreview)
                 } else if !result.codes.isEmpty {
                     let payload = result.codes.joined(separator: "\n")
                     Clipboard.copy(text: payload)
                     Sounds.playCopied()
-                    ToastCenter.shared.show(.success, result.codes.count == 1 ? "Copied code contents" : "Copied \(result.codes.count) codes", detail: payload.singleLinePreview)
+                    let title = result.codes.count == 1 ? "Copied code contents" : "Copied \(result.codes.count) codes"
+                    ToastCenter.shared.show(.success, title + method, detail: payload.singleLinePreview)
                 } else {
                     ToastCenter.shared.show(.warning, "No text found", detail: "Try selecting a larger area around the text.")
                 }

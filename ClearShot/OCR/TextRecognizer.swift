@@ -4,8 +4,17 @@ import Foundation
 import Vision
 
 struct RecognizedText: Sendable {
+    enum Method: String, Sendable {
+        case accurate = "Accurate OCR"
+        case accurateCPU = "Accurate OCR (CPU retry)"
+        case fast = "Fast OCR"
+        case fastFallback = "Fast OCR fallback"
+        case barcode = "QR/barcode detection"
+    }
+
     var text: String
     var codes: [String]
+    let method: Method?
 
     var isEmpty: Bool { text.isEmpty && codes.isEmpty }
     var wordCount: Int { text.split(whereSeparator: \.isWhitespace).count }
@@ -35,8 +44,10 @@ enum TextRecognizer {
         }
     }
 
+    private typealias AccuratePass = (text: String, method: RecognizedText.Method)
+
     private enum Event: Sendable {
-        case accurate(Result<String, Error>)
+        case accurate(Result<AccuratePass, Error>)
         case fast(Result<String, Error>)
         case codes(Result<[String], Error>)
         case timedOut
@@ -46,16 +57,16 @@ enum TextRecognizer {
     nonisolated static func recognize(_ image: CGImage, options: RecognitionOptions) async throws -> RecognizedText {
         if !options.accurate && !options.detectCodes {
             let text = try readText(in: image, options: options, level: .fast)
-            return RecognizedText(text: text, codes: [])
+            return RecognizedText(text: text, codes: [], method: text.isEmpty ? nil : .fast)
         }
 
         let (events, continuation) = AsyncStream<Event>.makeStream()
         let accurate = DispatchWorkItem {
             continuation.yield(.accurate(Result {
                 do {
-                    return try readText(in: image, options: options, level: .accurate)
+                    return (try readText(in: image, options: options, level: .accurate), .accurate)
                 } catch {
-                    return try readText(in: image, options: options, level: .accurate, preferCPU: true)
+                    return (try readText(in: image, options: options, level: .accurate, preferCPU: true), .accurateCPU)
                 }
             }))
         }
@@ -79,7 +90,7 @@ enum TextRecognizer {
         if options.detectCodes { codesQueue.async(execute: codes) }
         DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(5), execute: timeout)
 
-        var accurateResult: Result<String, Error>?
+        var accurateResult: Result<AccuratePass, Error>?
         var fastResult: Result<String, Error>?
         var codesResult: Result<[String], Error>? = options.detectCodes ? nil : .success([])
         for await event in events {
@@ -90,25 +101,26 @@ enum TextRecognizer {
             case .codes(let result): codesResult = result
             case .timedOut:
                 if let codes = try? codesResult?.get(), !codes.isEmpty {
-                    return RecognizedText(text: "", codes: codes)
+                    return RecognizedText(text: "", codes: codes, method: .barcode)
                 }
                 throw RecognitionError.timedOut
             }
 
             let codes = try? codesResult?.get()
-            if let text = try? accurateResult?.get(), !text.isEmpty {
-                return RecognizedText(text: text, codes: codes ?? [])
+            if let pass = try? accurateResult?.get(), !pass.text.isEmpty {
+                return RecognizedText(text: pass.text, codes: codes ?? [], method: pass.method)
             }
             if let fastResult {
                 if let text = try? fastResult.get(), !text.isEmpty {
-                    return RecognizedText(text: text, codes: codes ?? [])
+                    let method: RecognizedText.Method = options.accurate ? .fastFallback : .fast
+                    return RecognizedText(text: text, codes: codes ?? [], method: method)
                 }
                 if let codes, !codes.isEmpty {
-                    return RecognizedText(text: "", codes: codes)
+                    return RecognizedText(text: "", codes: codes, method: .barcode)
                 }
                 if (!options.accurate || accurateResult != nil), let codesResult {
-                    let text = try (try? accurateResult?.get()) ?? fastResult.get()
-                    return RecognizedText(text: text, codes: try codesResult.get())
+                    let text = try (try? accurateResult?.get().text) ?? fastResult.get()
+                    return RecognizedText(text: text, codes: try codesResult.get(), method: nil)
                 }
             }
         }
