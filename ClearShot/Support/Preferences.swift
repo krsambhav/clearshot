@@ -14,6 +14,18 @@ enum QuickAccessCorner: String, CaseIterable, Codable {
     var label: String { self == .bottomLeft ? "Bottom left" : "Bottom right" }
 }
 
+enum RecordingFrameRate: Int, CaseIterable {
+    case standard = 60
+    case high = 120
+
+    var label: String {
+        switch self {
+        case .standard: "60 fps"
+        case .high: "Up to 120 fps"
+        }
+    }
+}
+
 /// User preferences, persisted to UserDefaults and observable from SwiftUI.
 @MainActor
 @Observable
@@ -31,6 +43,7 @@ final class Preferences {
     var imageFormat: ImageFormat { didSet { save(imageFormat.rawValue, "imageFormat") } }
     var downscaleRetina: Bool { didSet { save(downscaleRetina, "downscaleRetina") } }
     var playSounds: Bool { didSet { save(playSounds, "playSounds") } }
+    var recordingFrameRate: RecordingFrameRate { didSet { save(recordingFrameRate.rawValue, "recordingFrameRate") } }
 
     // Quick Access
     var showQuickAccess: Bool { didSet { save(showQuickAccess, "showQuickAccess") } }
@@ -71,6 +84,7 @@ final class Preferences {
         imageFormat = ImageFormat(rawValue: d.string(forKey: "imageFormat") ?? "") ?? .png
         downscaleRetina = d.bool(forKey: "downscaleRetina")
         playSounds = d.object(forKey: "playSounds") as? Bool ?? true
+        recordingFrameRate = RecordingFrameRate(rawValue: d.integer(forKey: "recordingFrameRate")) ?? .standard
         showQuickAccess = d.object(forKey: "showQuickAccess") as? Bool ?? true
         quickAccessCorner = QuickAccessCorner(rawValue: d.string(forKey: "quickAccessCorner") ?? "") ?? .bottomLeft
         quickAccessAutoClose = d.object(forKey: "quickAccessAutoClose") as? Int ?? 5

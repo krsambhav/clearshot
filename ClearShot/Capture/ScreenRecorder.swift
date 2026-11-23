@@ -52,7 +52,7 @@ final class ScreenRecorder {
         let controlsID = CGWindowID(controls.windowNumber)
 
         let displayRate = screen.maximumFramesPerSecond
-        let frameRate = displayRate > 0 ? min(displayRate, 120) : 60
+        let frameRate = min(displayRate > 0 ? displayRate : 60, Preferences.shared.recordingFrameRate.rawValue)
         let stamp = Date()
         Task { [self] in
             do {
@@ -67,7 +67,6 @@ final class ScreenRecorder {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let draft = folder.appendingPathComponent(".clearshot-\(UUID()).mp4")
 
-                // Limit pixel throughput at high refresh rates, while keeping the display's aspect ratio.
                 let filter: SCContentFilter
                 if let panel = content.windows.first(where: { $0.windowID == controlsID }) {
                     filter = SCContentFilter(display: display, excludingWindows: [panel])
@@ -77,7 +76,7 @@ final class ScreenRecorder {
                 } else {
                     throw RecordingError.controlsNotExcludable
                 }
-                let config = Self.configuration(for: filter, region: region, frameRate: frameRate, useNativeRate: displayRate == frameRate)
+                let config = Self.configuration(for: filter, region: region, frameRate: frameRate, useNativeRate: frameRate > 60 && displayRate == frameRate)
                 let writer = try RecordingWriter(url: draft, configuration: config, frameRate: frameRate) { [weak self] error in
                     Task { @MainActor in self?.interrupted(id: id, error: error, streamStopped: false) }
                 }
@@ -201,9 +200,8 @@ final class ScreenRecorder {
         let size = region?.size ?? filter.contentRect.size
         let pixelWidth = size.width * CGFloat(filter.pointPixelScale)
         let pixelHeight = size.height * CGFloat(filter.pointPixelScale)
-        let longEdge: CGFloat = frameRate > 60 ? 2560 : 3840
-        let shortEdge: CGFloat = frameRate > 60 ? 1664 : 2160
-        let scale = min(1, longEdge / max(pixelWidth, pixelHeight), shortEdge / min(pixelWidth, pixelHeight))
+        // Bound WindowServer's capture work even on high-resolution Retina displays.
+        let scale = min(1, 1920 / max(pixelWidth, pixelHeight), 1200 / min(pixelWidth, pixelHeight))
 
         let config = SCStreamConfiguration()
         if let region { config.sourceRect = region }
@@ -214,7 +212,7 @@ final class ScreenRecorder {
         config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         config.colorSpaceName = CGColorSpace.itur_709
         config.showsCursor = true
-        config.queueDepth = 6
+        config.queueDepth = frameRate > 60 ? 6 : 4
         return config
     }
 

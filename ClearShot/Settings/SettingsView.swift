@@ -252,6 +252,11 @@ private struct CaptureSettings: View {
                 Toggle("", isOn: $prefs.windowWallpaper).toggleStyle(.shad).labelsHidden()
             }
         }
+        SettingsGroup(title: "Screen recording") {
+            FieldRow(title: "Video frame rate", description: "60 fps reduces recording load. Higher frame rates depend on the display.") {
+                ShadSelect(selection: $prefs.recordingFrameRate, options: RecordingFrameRate.allCases.map { ($0, $0.label) })
+            }
+        }
         SettingsGroup(title: "Selection") {
             FieldRow(title: "Crosshair", description: "Full-screen guides for lining up a selection.") {
                 Toggle("", isOn: $prefs.showCrosshair).toggleStyle(.shad).labelsHidden()
