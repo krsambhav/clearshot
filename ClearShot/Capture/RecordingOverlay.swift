@@ -10,12 +10,15 @@ final class RecordingOverlay {
     private let selection = RecordingSelection()
     private var windowLookup: Task<Void, Never>?
     private var windows: [WindowTarget] = []
+    private var keyMonitor: Any?
 
     func present(_ completion: @escaping (NSScreen, RecordingTarget, RecordingAudioOptions) -> Void) {
         self.completion = completion
         previousApp = NSWorkspace.shared.frontmostApplication
         let activeScreen = NSScreen.withMouse
+        let windowOrder = ScreenCapturer.onScreenWindowOrder()
         selection.options = RecordingAudioOptions()
+        loadWindows(in: windowOrder)
         for screen in NSScreen.screens {
             let panel = OverlayPanel(screen: screen)
             panel.isOpaque = false
@@ -29,6 +32,12 @@ final class RecordingOverlay {
                 panel.makeFirstResponder(view)
             }
         }
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.keyCode == 49 || event.keyCode == 53,
+                  let self, let panel = event.window as? OverlayPanel, self.panels.contains(panel),
+                  let view = panel.contentView as? RecordingSelectionView else { return event }
+            return view.handlePickerKey(event) ? nil : event
+        }
     }
 
     func dismiss() {
@@ -36,6 +45,8 @@ final class RecordingOverlay {
         windowLookup?.cancel()
         windowLookup = nil
         windows = []
+        if let keyMonitor { NSEvent.removeMonitor(keyMonitor) }
+        keyMonitor = nil
         selection.windowMode = false
         selection.windowPrompt = ""
         for panel in panels { panel.orderOut(nil) }
@@ -59,23 +70,21 @@ final class RecordingOverlay {
 
     fileprivate func toggleWindowMode() {
         selection.windowMode.toggle()
-        windowLookup?.cancel()
-        windows = []
-        selection.windowPrompt = "Finding windows…"
         refreshSelection(modeChanged: true)
-        guard selection.windowMode else { return }
+    }
+
+    private func loadWindows(in order: [CGWindowID]) {
+        selection.windowPrompt = "Finding windows…"
         windowLookup = Task {
             do {
-                let targets = try await ScreenCapturer().recordingWindows()
+                let targets = try await ScreenCapturer().recordingWindows(in: order)
                 guard !Task.isCancelled else { return }
                 windows = targets
                 selection.windowPrompt = targets.isEmpty ? "No windows available" : "Click a window"
-                refreshSelection()
+                if selection.windowMode { refreshSelection() }
             } catch {
                 guard !Task.isCancelled else { return }
-                selection.windowMode = false
-                refreshSelection(modeChanged: true)
-                ToastCenter.shared.show(.error, "Couldn't list windows", detail: error.localizedDescription)
+                selection.windowPrompt = "Couldn't list windows"
             }
         }
     }
@@ -84,11 +93,12 @@ final class RecordingOverlay {
         windows.first { $0.frame.contains(point) }
     }
 
-    fileprivate func refreshSelection(modeChanged: Bool = false) {
+    fileprivate func refreshSelection(at point: CGPoint = NSEvent.mouseLocation, modeChanged: Bool = false) {
+        let target = selection.windowMode ? window(at: point) : nil
         for panel in panels {
             guard let view = panel.contentView as? RecordingSelectionView else { continue }
-            if modeChanged { panel.invalidateCursorRects(for: view) }
-            view.refreshWindowHighlight()
+            if modeChanged { view.modeChanged() }
+            view.highlight(target)
         }
     }
 }
@@ -107,7 +117,7 @@ private final class RecordingSelectionView: NSView {
     private let shade = CAShapeLayer()
     private let outline = CAShapeLayer()
     private var origin: CGPoint?
-    private var windowClickStarted = false
+    private var pressedWindowID: CGWindowID?
 
     init(screen: NSScreen, selection: RecordingSelection, overlay: RecordingOverlay) {
         self.screen = screen
@@ -166,27 +176,32 @@ private final class RecordingSelectionView: NSView {
             window.makeKey()
             window.makeFirstResponder(self)
         }
-        if selection.windowMode { overlay.refreshSelection() }
+        if selection.windowMode, let window {
+            overlay.refreshSelection(at: window.convertPoint(toScreen: event.locationInWindow))
+        }
     }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeKey()
         window?.makeFirstResponder(self)
-        windowClickStarted = selection.windowMode
-        guard !selection.windowMode else { return }
+        if selection.windowMode {
+            pressedWindowID = windowTarget(for: event)?.window.windowID
+            return
+        }
         origin = convert(event.locationInWindow, from: nil)
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard !selection.windowMode else { return }
         updateSelection(selection(at: convert(event.locationInWindow, from: nil)))
     }
 
     override func mouseUp(with event: NSEvent) {
         if selection.windowMode {
-            if windowClickStarted, let target = overlay.window(at: NSEvent.mouseLocation) {
+            defer { pressedWindowID = nil }
+            if let target = windowTarget(for: event), target.window.windowID == pressedWindowID {
                 overlay.select(screen, target: .window(target))
             }
-            windowClickStarted = false
             return
         }
         let region = selection(at: convert(event.locationInWindow, from: nil))
@@ -196,21 +211,38 @@ private final class RecordingSelectionView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if !handlePickerKey(event) { super.keyDown(with: event) }
+    }
+
+    fileprivate func handlePickerKey(_ event: NSEvent) -> Bool {
         switch event.keyCode {
         case 36, 76: overlay.select(screen, target: .display(region: nil))
         case 49:
-            guard !event.isARepeat else { return }
-            origin = nil
-            windowClickStarted = false
-            overlay.toggleWindowMode()
+            guard event.modifierFlags.intersection([.command, .control, .option]).isEmpty else { return false }
+            if !event.isARepeat { overlay.toggleWindowMode() }
         case 53: overlay.dismiss()
-        default: super.keyDown(with: event)
+        default: return false
         }
+        return true
     }
 
-    fileprivate func refreshWindowHighlight() {
-        let mouse = NSEvent.mouseLocation
-        guard selection.windowMode, let target = overlay.window(at: mouse) else {
+    fileprivate func modeChanged() {
+        origin = nil
+        pressedWindowID = nil
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        outline.strokeColor = (selection.windowMode ? Theme.nsBrand : Theme.overlayInk).cgColor
+        CATransaction.commit()
+        window?.invalidateCursorRects(for: self)
+    }
+
+    private func windowTarget(for event: NSEvent) -> WindowTarget? {
+        guard let window else { return nil }
+        return overlay.window(at: window.convertPoint(toScreen: event.locationInWindow))
+    }
+
+    fileprivate func highlight(_ target: WindowTarget?) {
+        guard let target else {
             updateSelection(nil)
             return
         }

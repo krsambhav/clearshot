@@ -124,25 +124,30 @@ final class ScreenCapturer {
         return config
     }
 
-    /// ClearShot's own windows (editor, Settings, History) are pickable like any other app's.
-    func recordingWindows() async throws -> [WindowTarget] {
-        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
-        let hidden = Set(NSApp.windows.filter { $0 is TransientPanel && $0.isVisible }.map { CGWindowID($0.windowNumber) })
-        return Self.windowTargets(from: content, hiding: hidden)
+    func recordingWindows(in order: [CGWindowID]) async throws -> [WindowTarget] {
+        // The recording panels can cover the windows before ScreenCaptureKit returns.
+        // Restrict the result to the windows that were visible when the picker opened.
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false)
+        return Self.windowTargets(from: content, hiding: [], visibleOrder: order)
     }
 
-    private static func windowTargets(from content: SCShareableContent, hiding hidden: Set<CGWindowID>) -> [WindowTarget] {
+    static func onScreenWindowOrder() -> [CGWindowID] {
+        // Quartz lists windows front-to-back.
+        (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
+            .compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
+    }
+
+    /// ClearShot's own windows (editor, Settings, History) are pickable like any other app's.
+    private static func windowTargets(from content: SCShareableContent, hiding hidden: Set<CGWindowID>,
+                                      visibleOrder: [CGWindowID]? = nil) -> [WindowTarget] {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let excludedOwners: Set<String> = ["com.apple.dock", "com.apple.WindowManager", "com.apple.controlcenter", "com.apple.notificationcenterui"]
 
-        // CGWindowList is ordered front-to-back; ScreenCaptureKit's list is not.
-        let order = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] ?? [])
-            .compactMap { $0[kCGWindowNumber as String] as? CGWindowID }
-        let rank = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        let rank = Dictionary(uniqueKeysWithValues: (visibleOrder ?? onScreenWindowOrder()).enumerated().map { ($1, $0) })
 
         return content.windows
             .filter { window in
-                guard window.isOnScreen, window.windowLayer == 0,
+                guard (visibleOrder == nil ? window.isOnScreen : rank[window.windowID] != nil), window.windowLayer == 0,
                       window.frame.width > 40, window.frame.height > 40,
                       let app = window.owningApplication else { return false }
                 return !hidden.contains(window.windowID) && !excludedOwners.contains(app.bundleIdentifier)
