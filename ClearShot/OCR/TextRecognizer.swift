@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreML
 import Foundation
 import Vision
 
@@ -22,6 +23,40 @@ struct RecognitionOptions: Sendable {
 enum TextRecognizer {
     @concurrent
     nonisolated static func recognize(_ image: CGImage, options: RecognitionOptions) async throws -> RecognizedText {
+        let textResult = Result {
+            let observations: [VNRecognizedTextObservation]
+            do {
+                observations = try recognizeText(in: image, options: options)
+            } catch {
+                // The fast recognizer already runs on the CPU.
+                guard options.accurate else { throw error }
+                observations = try recognizeText(in: image, options: options, preferCPU: true)
+            }
+            return layout(observations, keepLineBreaks: options.keepLineBreaks)
+        }
+
+        let codeResult = Result {
+            guard options.detectCodes else { return [String]() }
+            let request = VNDetectBarcodesRequest()
+            try VNImageRequestHandler(cgImage: image).perform([request])
+            let codes = (request.results ?? []).compactMap(\.payloadStringValue)
+            return Array(NSOrderedSet(array: codes)) as? [String] ?? codes
+        }
+
+        if let text = try? textResult.get(), !text.isEmpty {
+            return RecognizedText(text: text, codes: (try? codeResult.get()) ?? [])
+        }
+        if let codes = try? codeResult.get(), !codes.isEmpty {
+            return RecognizedText(text: "", codes: codes)
+        }
+        return RecognizedText(text: try textResult.get(), codes: try codeResult.get())
+    }
+
+    nonisolated private static func recognizeText(
+        in image: CGImage,
+        options: RecognitionOptions,
+        preferCPU: Bool = false
+    ) throws -> [VNRecognizedTextObservation] {
         let textRequest = VNRecognizeTextRequest()
         textRequest.recognitionLevel = options.accurate ? .accurate : .fast
         textRequest.usesLanguageCorrection = options.languageCorrection
@@ -29,17 +64,16 @@ enum TextRecognizer {
         // Small UI text is common in screenshots; let Vision look at everything.
         textRequest.minimumTextHeight = 0
 
-        var requests: [VNRequest] = [textRequest]
-        let codeRequest = VNDetectBarcodesRequest()
-        if options.detectCodes { requests.append(codeRequest) }
+        if preferCPU {
+            for (stage, devices) in try textRequest.supportedComputeStageDevices {
+                for case let .cpu(device) in devices {
+                    textRequest.setComputeDevice(.cpu(device), for: stage)
+                }
+            }
+        }
 
-        let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        try handler.perform(requests)
-
-        let observations = textRequest.results ?? []
-        let text = layout(observations, keepLineBreaks: options.keepLineBreaks)
-        let codes = options.detectCodes ? (codeRequest.results ?? []).compactMap(\.payloadStringValue) : []
-        return RecognizedText(text: text, codes: Array(NSOrderedSet(array: codes)) as? [String] ?? codes)
+        try VNImageRequestHandler(cgImage: image).perform([textRequest])
+        return textRequest.results ?? []
     }
 
     private struct Fragment {
