@@ -21,44 +21,108 @@ struct RecognitionOptions: Sendable {
 /// On-device text recognition with Apple Vision. Runs off the main actor; a typical selection
 /// finishes in well under half a second on Apple silicon.
 enum TextRecognizer {
-    @concurrent
-    nonisolated static func recognize(_ image: CGImage, options: RecognitionOptions) async throws -> RecognizedText {
-        let textResult = Result {
-            let observations: [VNRecognizedTextObservation]
-            do {
-                observations = try recognizeText(in: image, options: options)
-            } catch {
-                // The fast recognizer already runs on the CPU.
-                guard options.accurate else { throw error }
-                observations = try recognizeText(in: image, options: options, preferCPU: true)
-            }
-            return layout(observations, keepLineBreaks: options.keepLineBreaks)
-        }
+    // Vision performs synchronous work and can spend a long time loading its models.
+    // Separate queues let text, fallback text and barcodes finish independently.
+    nonisolated private static let accurateQueue = DispatchQueue(label: "app.clearshot.ocr.accurate", qos: .userInitiated)
+    nonisolated private static let fastQueue = DispatchQueue(label: "app.clearshot.ocr.fast", qos: .userInitiated)
+    nonisolated private static let codesQueue = DispatchQueue(label: "app.clearshot.ocr.codes", qos: .userInitiated)
 
-        let codeResult = Result {
-            guard options.detectCodes else { return [String]() }
-            let request = VNDetectBarcodesRequest()
-            try VNImageRequestHandler(cgImage: image).perform([request])
-            let codes = (request.results ?? []).compactMap(\.payloadStringValue)
-            return Array(NSOrderedSet(array: codes)) as? [String] ?? codes
-        }
+    enum RecognitionError: LocalizedError {
+        case timedOut
 
-        if let text = try? textResult.get(), !text.isEmpty {
-            return RecognizedText(text: text, codes: (try? codeResult.get()) ?? [])
+        var errorDescription: String? {
+            "Text recognition took too long. Try again in a few seconds."
         }
-        if let codes = try? codeResult.get(), !codes.isEmpty {
-            return RecognizedText(text: "", codes: codes)
-        }
-        return RecognizedText(text: try textResult.get(), codes: try codeResult.get())
     }
 
-    nonisolated private static func recognizeText(
+    private enum Event: Sendable {
+        case accurate(Result<String, Error>)
+        case fast(Result<String, Error>)
+        case codes(Result<[String], Error>)
+        case timedOut
+    }
+
+    @concurrent
+    nonisolated static func recognize(_ image: CGImage, options: RecognitionOptions) async throws -> RecognizedText {
+        if !options.accurate && !options.detectCodes {
+            let text = try readText(in: image, options: options, level: .fast)
+            return RecognizedText(text: text, codes: [])
+        }
+
+        let (events, continuation) = AsyncStream<Event>.makeStream()
+        let accurate = DispatchWorkItem {
+            continuation.yield(.accurate(Result {
+                do {
+                    return try readText(in: image, options: options, level: .accurate)
+                } catch {
+                    return try readText(in: image, options: options, level: .accurate, preferCPU: true)
+                }
+            }))
+        }
+        let fast = DispatchWorkItem {
+            continuation.yield(.fast(Result { try readText(in: image, options: options, level: .fast) }))
+        }
+        let codes = DispatchWorkItem {
+            continuation.yield(.codes(Result { try readCodes(in: image) }))
+        }
+        let timeout = DispatchWorkItem { continuation.yield(.timedOut) }
+        defer {
+            continuation.finish()
+            accurate.cancel()
+            fast.cancel()
+            codes.cancel()
+            timeout.cancel()
+        }
+
+        if options.accurate { accurateQueue.async(execute: accurate) }
+        fastQueue.asyncAfter(deadline: .now() + (options.accurate ? .milliseconds(650) : .milliseconds(0)), execute: fast)
+        if options.detectCodes { codesQueue.async(execute: codes) }
+        DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(5), execute: timeout)
+
+        var accurateResult: Result<String, Error>?
+        var fastResult: Result<String, Error>?
+        var codesResult: Result<[String], Error>? = options.detectCodes ? nil : .success([])
+        for await event in events {
+            try Task.checkCancellation()
+            switch event {
+            case .accurate(let result): accurateResult = result
+            case .fast(let result): fastResult = result
+            case .codes(let result): codesResult = result
+            case .timedOut:
+                if let codes = try? codesResult?.get(), !codes.isEmpty {
+                    return RecognizedText(text: "", codes: codes)
+                }
+                throw RecognitionError.timedOut
+            }
+
+            let codes = try? codesResult?.get()
+            if let text = try? accurateResult?.get(), !text.isEmpty {
+                return RecognizedText(text: text, codes: codes ?? [])
+            }
+            if let fastResult {
+                if let text = try? fastResult.get(), !text.isEmpty {
+                    return RecognizedText(text: text, codes: codes ?? [])
+                }
+                if let codes, !codes.isEmpty {
+                    return RecognizedText(text: "", codes: codes)
+                }
+                if (!options.accurate || accurateResult != nil), let codesResult {
+                    let text = try (try? accurateResult?.get()) ?? fastResult.get()
+                    return RecognizedText(text: text, codes: try codesResult.get())
+                }
+            }
+        }
+        throw CancellationError()
+    }
+
+    nonisolated private static func readText(
         in image: CGImage,
         options: RecognitionOptions,
+        level: VNRequestTextRecognitionLevel,
         preferCPU: Bool = false
-    ) throws -> [VNRecognizedTextObservation] {
+    ) throws -> String {
         let textRequest = VNRecognizeTextRequest()
-        textRequest.recognitionLevel = options.accurate ? .accurate : .fast
+        textRequest.recognitionLevel = level
         textRequest.usesLanguageCorrection = options.languageCorrection
         textRequest.automaticallyDetectsLanguage = true
         // Small UI text is common in screenshots; let Vision look at everything.
@@ -73,7 +137,14 @@ enum TextRecognizer {
         }
 
         try VNImageRequestHandler(cgImage: image).perform([textRequest])
-        return textRequest.results ?? []
+        return layout(textRequest.results ?? [], keepLineBreaks: options.keepLineBreaks)
+    }
+
+    nonisolated private static func readCodes(in image: CGImage) throws -> [String] {
+        let request = VNDetectBarcodesRequest()
+        try VNImageRequestHandler(cgImage: image).perform([request])
+        let codes = (request.results ?? []).compactMap(\.payloadStringValue)
+        return Array(NSOrderedSet(array: codes)) as? [String] ?? codes
     }
 
     private struct Fragment {

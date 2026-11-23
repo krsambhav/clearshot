@@ -22,7 +22,8 @@ final class ToastCenter {
 
     private let panelSize = NSSize(width: 440, height: 260)
 
-    func show(_ kind: Toast.Kind, _ title: String, detail: String? = nil, duration: Duration = .seconds(2.6)) {
+    @discardableResult
+    func show(_ kind: Toast.Kind, _ title: String, detail: String? = nil, duration: Duration = .seconds(2.6)) -> UUID {
         let toast = Toast(kind: kind, title: title, detail: detail)
         ensurePanel()
         positionPanel()
@@ -38,6 +39,7 @@ final class ToastCenter {
             guard !Task.isCancelled else { return }
             self?.dismiss(toast.id)
         }
+        return toast.id
     }
 
     func dismiss(_ id: UUID) {

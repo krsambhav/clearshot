@@ -12,6 +12,7 @@ final class AppController {
     private let capturer = ScreenCapturer()
     private var overlay: CaptureOverlayController?
     private var isCapturing = false
+    private var recognitionTask: Task<Void, Never>?
     private let prefs = Preferences.shared
     private let history = HistoryStore.shared
 
@@ -147,9 +148,23 @@ final class AppController {
             languageCorrection: prefs.ocrLanguageCorrection,
             detectCodes: prefs.ocrDetectCodes
         )
-        Task {
+        recognitionTask?.cancel()
+        recognitionTask = Task {
+            var progressID: UUID?
+            let progress = Task {
+                try? await Task.sleep(for: .seconds(1))
+                guard !Task.isCancelled else { return }
+                progressID = ToastCenter.shared.show(.info, "Reading text…", duration: .seconds(5))
+            }
+            defer {
+                progress.cancel()
+                if let progressID { ToastCenter.shared.dismiss(progressID) }
+                if !Task.isCancelled { recognitionTask = nil }
+            }
+
             do {
                 let result = try await TextRecognizer.recognize(image, options: options)
+                try Task.checkCancellation()
                 if !result.text.isEmpty {
                     Clipboard.copy(text: result.text)
                     Sounds.playCopied()
@@ -167,7 +182,8 @@ final class AppController {
                     history.add(image: image, scale: scale, kind: .text, text: result.text.isEmpty ? result.codes.joined(separator: "\n") : result.text)
                 }
             } catch {
-                report(error)
+                guard !Task.isCancelled else { return }
+                ToastCenter.shared.show(.error, "Couldn’t read text", detail: error.localizedDescription)
             }
         }
     }
