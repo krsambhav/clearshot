@@ -22,7 +22,9 @@ final class RecordingOverlay {
         for screen in NSScreen.screens {
             let panel = OverlayPanel(screen: screen)
             panel.isOpaque = false
-            panel.backgroundColor = .clear
+            // WindowServer skips fully transparent pixels when routing clicks. Keep the
+            // highlighted window nearly clear so clicks still reach the recording picker.
+            panel.backgroundColor = NSColor(white: 0, alpha: 0.02)
             let view = RecordingSelectionView(screen: screen, selection: selection, overlay: self)
             panel.contentView = view
             panels.append(panel)
