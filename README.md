@@ -16,7 +16,7 @@ Works on any Mac running macOS 15 or later (Apple silicon and Intel). It install
 
 - **Capture text (OCR):** select any area and the text is on your clipboard instantly (Apple Vision, on-device). Also reads QR codes and barcodes.
 - **Area, window and fullscreen capture:** the screen freezes on capture; there's a crosshair, Space to switch to window mode, ⇧ for square, ⌥ to draw from the center.
-- **Screen recording:** choose **Record Screen** in the menu bar or press ⌥⇧⌘6 to record the display under the pointer. Use the same shortcut or **Stop Recording** to save a video-only MP4 to your configured export folder. **Show Last Recording** reveals the file in Finder.
+- **Screen recording:** choose **Record Screen** in the menu bar or press ⌥⇧⌘6. Drag over an area or choose **Record Full Screen** to begin. The floating controls let you pause, resume, stop and save, or delete the current recording. Drag the controls by their handle to move them. They are excluded from the video. ClearShot saves video-only MP4s to your configured export folder. **Show Last Recording** reveals the file in Finder.
   ClearShot follows the display's refresh rate up to 120 fps on ProMotion and limits capture resolution at high frame rates to reduce the load on the system.
 - **Quick Access:** a thumbnail after every capture. Drag it into any app, or hover to copy, save, annotate or pin.
 - **Pin to screen:** floating, always-on-top screenshots. Scroll or pinch to zoom, right-click for opacity.

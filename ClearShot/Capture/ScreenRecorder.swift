@@ -8,14 +8,24 @@ import VideoToolbox
 final class ScreenRecorder {
     static let shared = ScreenRecorder()
 
-    private enum Phase { case idle, starting, recording, stopping }
+    private enum Phase { case idle, starting, recording, paused, stopping }
     private var phase = Phase.idle
     private(set) var lastRecording: URL?
     var isBusy: Bool { phase != .idle }
+    var isPaused: Bool { phase == .paused }
+    var canControl: Bool { phase == .recording || phase == .paused }
+    var controlTitle: String {
+        switch phase {
+        case .idle, .starting: "Starting…"
+        case .recording: "Recording"
+        case .paused: "Paused"
+        case .stopping: "Finishing…"
+        }
+    }
     var menuTitle: String {
         switch phase {
         case .idle: "Record Screen"
-        case .starting, .recording: "Stop Recording"
+        case .starting, .recording, .paused: "Stop Recording"
         case .stopping: "Saving Recording…"
         }
     }
@@ -24,8 +34,9 @@ final class ScreenRecorder {
     @ObservationIgnored private var activeID: UUID?
     @ObservationIgnored private var stopRequested = false
     @ObservationIgnored private var onStopped: (() -> Void)?
+    @ObservationIgnored private var controls: RecordingControlsPanel?
 
-    func start(on screen: NSScreen, in folder: URL) {
+    func start(on screen: NSScreen, region: CGRect?, in folder: URL) {
         guard phase == .idle else { return }
         guard let displayID = screen.displayID else {
             ToastCenter.shared.show(.error, "Couldn't start recording", detail: CaptureError.noDisplay.localizedDescription)
@@ -35,13 +46,17 @@ final class ScreenRecorder {
         activeID = id
         phase = .starting
         StatusBarController.shared?.indicateRecording(true)
+        let controls = RecordingControlsPanel(screen: screen, recorder: self)
+        self.controls = controls
+        controls.orderFrontRegardless()
+        let controlsID = CGWindowID(controls.windowNumber)
 
         let displayRate = screen.maximumFramesPerSecond
         let frameRate = displayRate > 0 ? min(displayRate, 120) : 60
         let stamp = Date()
         Task { [self] in
             do {
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
                 if stopRequested {
                     reset()
                     return
@@ -53,8 +68,16 @@ final class ScreenRecorder {
                 let draft = folder.appendingPathComponent(".clearshot-\(UUID()).mp4")
 
                 // Limit pixel throughput at high refresh rates, while keeping the display's aspect ratio.
-                let filter = SCContentFilter(display: display, excludingWindows: [])
-                let config = Self.configuration(for: filter, frameRate: frameRate, useNativeRate: displayRate == frameRate)
+                let filter: SCContentFilter
+                if let panel = content.windows.first(where: { $0.windowID == controlsID }) {
+                    filter = SCContentFilter(display: display, excludingWindows: [panel])
+                } else if let app = content.applications.first(where: { $0.processID == ProcessInfo.processInfo.processIdentifier }) {
+                    // A newly ordered panel may not be listed yet. Keep it excluded by its owning app.
+                    filter = SCContentFilter(display: display, excludingApplications: [app], exceptingWindows: [])
+                } else {
+                    throw RecordingError.controlsNotExcludable
+                }
+                let config = Self.configuration(for: filter, region: region, frameRate: frameRate, useNativeRate: displayRate == frameRate)
                 let writer = try RecordingWriter(url: draft, configuration: config, frameRate: frameRate) { [weak self] error in
                     Task { @MainActor in self?.interrupted(id: id, error: error, streamStopped: false) }
                 }
@@ -86,8 +109,34 @@ final class ScreenRecorder {
         if let onStopped { self.onStopped = onStopped }
         if phase == .starting {
             stopRequested = true
-        } else if phase == .recording, let session {
+        } else if canControl, let session {
             finish(session)
+        }
+    }
+
+    func togglePause() {
+        guard canControl, let session else { return }
+        let resume = isPaused
+        session.writer.setPaused(!resume, at: Self.currentTime(for: session.stream))
+        phase = resume ? .recording : .paused
+    }
+
+    func discard() {
+        guard canControl, let session else { return }
+        phase = .stopping
+        controls?.orderOut(nil)
+        Task {
+            try? await session.stream.stopCapture()
+            await session.writer.cancel()
+            do {
+                try FileManager.default.removeItem(at: session.draft)
+                ToastCenter.shared.show(.info, "Recording deleted")
+            } catch let error as CocoaError where error.code == .fileNoSuchFile {
+                ToastCenter.shared.show(.info, "Recording deleted")
+            } catch {
+                ToastCenter.shared.show(.error, "Couldn't delete recording", detail: error.localizedDescription)
+            }
+            reset()
         }
     }
 
@@ -101,13 +150,13 @@ final class ScreenRecorder {
     }
 
     private func interrupted(id: UUID, error: Error, streamStopped: Bool) {
-        guard let session, activeID == id, phase == .starting || phase == .recording else { return }
+        guard let session, activeID == id, phase == .starting || canControl else { return }
         finish(session, interruption: error, streamStopped: streamStopped)
     }
 
     private func finish(_ session: Session, interruption: Error? = nil, streamStopped: Bool = false) {
         phase = .stopping
-        let end = CMClockGetTime(session.stream.synchronizationClock ?? CMClockGetHostTimeClock())
+        let end = Self.currentTime(for: session.stream)
         Task {
             if !streamStopped { try? await session.stream.stopCapture() }
             do {
@@ -132,6 +181,8 @@ final class ScreenRecorder {
     }
 
     private func reset() {
+        controls?.orderOut(nil)
+        controls = nil
         session = nil
         activeID = nil
         phase = .idle
@@ -142,8 +193,12 @@ final class ScreenRecorder {
         completion?()
     }
 
-    private static func configuration(for filter: SCContentFilter, frameRate: Int, useNativeRate: Bool) -> SCStreamConfiguration {
-        let size = filter.contentRect.size
+    private static func currentTime(for stream: SCStream) -> CMTime {
+        CMClockGetTime(stream.synchronizationClock ?? CMClockGetHostTimeClock())
+    }
+
+    private static func configuration(for filter: SCContentFilter, region: CGRect?, frameRate: Int, useNativeRate: Bool) -> SCStreamConfiguration {
+        let size = region?.size ?? filter.contentRect.size
         let pixelWidth = size.width * CGFloat(filter.pointPixelScale)
         let pixelHeight = size.height * CGFloat(filter.pointPixelScale)
         let longEdge: CGFloat = frameRate > 60 ? 2560 : 3840
@@ -151,6 +206,7 @@ final class ScreenRecorder {
         let scale = min(1, longEdge / max(pixelWidth, pixelHeight), shortEdge / min(pixelWidth, pixelHeight))
 
         let config = SCStreamConfiguration()
+        if let region { config.sourceRect = region }
         config.width = max(2, Int(pixelWidth * scale) / 2 * 2)
         config.height = max(2, Int(pixelHeight * scale) / 2 * 2)
         // Zero lets ScreenCaptureKit follow the display's native pacing, including variable refresh.
@@ -184,13 +240,14 @@ private nonisolated final class StreamDelegate: NSObject, SCStreamDelegate {
 }
 
 private nonisolated enum RecordingError: LocalizedError {
-    case encoderUnavailable, noFrames, encodingFailed
+    case encoderUnavailable, noFrames, encodingFailed, controlsNotExcludable
 
     var errorDescription: String? {
         switch self {
         case .encoderUnavailable: "A video encoder is unavailable for this display."
         case .noFrames: "The display didn’t deliver any video frames."
         case .encodingFailed: "The video encoder couldn’t complete the recording."
+        case .controlsNotExcludable: "ClearShot couldn’t hide the recording controls from the video."
         }
     }
 }
@@ -204,6 +261,9 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
     private let frameInterval: CMTime
     private var lastFrame: CMSampleBuffer?
     private var acceptingFrames = true
+    private var pauseStart: CMTime?
+    private var resumedAt: CMTime?
+    private var pausedDuration = CMTime.zero
 
     init(url: URL, configuration: SCStreamConfiguration, frameRate: Int,
          onFailure: @escaping @Sendable (Error) -> Void) throws {
@@ -233,14 +293,16 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard acceptingFrames, type == .screen, sampleBuffer.isValid, sampleBuffer.imageBuffer != nil,
+        guard acceptingFrames, pauseStart == nil, type == .screen, sampleBuffer.isValid, sampleBuffer.imageBuffer != nil,
               let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
                 as? [[SCStreamFrameInfo: Any]],
               let rawStatus = attachments.first?[.status] as? Int,
               let status = SCFrameStatus(rawValue: rawStatus), status == .complete || status == .started else { return }
 
-        let timestamp = sampleBuffer.presentationTimeStamp
-        guard timestamp.isNumeric, timestamp > (lastFrame?.presentationTimeStamp ?? .negativeInfinity) else { return }
+        let sourceTime = sampleBuffer.presentationTimeStamp
+        guard sourceTime.isNumeric, sourceTime >= (resumedAt ?? .negativeInfinity) else { return }
+        let timestamp = sourceTime - pausedDuration
+        guard timestamp > (lastFrame?.presentationTimeStamp ?? .negativeInfinity) else { return }
         if asset.status == .unknown {
             guard asset.startWriting() else { fail(); return }
             asset.startSession(atSourceTime: timestamp)
@@ -248,8 +310,28 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
         guard asset.status == .writing else { fail(); return }
         // Drop frames under encoder backpressure and retain only the most recent accepted frame.
         guard input.isReadyForMoreMediaData else { return }
-        guard input.append(sampleBuffer) else { fail(); return }
-        lastFrame = sampleBuffer
+        var frame = sampleBuffer
+        if pausedDuration > .zero {
+            guard let shifted = Self.retime(sampleBuffer, to: timestamp, duration: sampleBuffer.duration) else {
+                fail()
+                return
+            }
+            frame = shifted
+        }
+        guard input.append(frame) else { fail(); return }
+        lastFrame = frame
+    }
+
+    func setPaused(_ paused: Bool, at time: CMTime) {
+        queue.async {
+            if paused {
+                self.pauseStart = time
+            } else if let start = self.pauseStart {
+                self.pausedDuration = self.pausedDuration + max(.zero, time - start)
+                self.resumedAt = time
+                self.pauseStart = nil
+            }
+        }
     }
 
     func finish(at time: CMTime) async throws {
@@ -264,7 +346,7 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
                     continuation.resume(throwing: error)
                     return
                 }
-                let end = max(time, lastFrame.presentationTimeStamp + self.frameInterval)
+                let end = max((self.pauseStart ?? time) - self.pausedDuration, lastFrame.presentationTimeStamp + self.frameInterval)
                 self.extend(lastFrame, to: end)
                 self.asset.endSession(atSourceTime: end)
                 self.input.markAsFinished()
@@ -294,13 +376,15 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
         // ScreenCaptureKit skips unchanged frames. Repeat the last image at the end of a static tail.
         let timestamp = end - frameInterval
         guard timestamp > lastFrame.presentationTimeStamp, input.isReadyForMoreMediaData else { return }
-        var timing = CMSampleTimingInfo(duration: frameInterval, presentationTimeStamp: timestamp, decodeTimeStamp: .invalid)
-        var finalFrame: CMSampleBuffer?
-        if CMSampleBufferCreateCopyWithNewTiming(allocator: nil, sampleBuffer: lastFrame, sampleTimingEntryCount: 1,
-                                                 sampleTimingArray: &timing, sampleBufferOut: &finalFrame) == noErr,
-           let finalFrame {
-            _ = input.append(finalFrame)
-        }
+        if let finalFrame = Self.retime(lastFrame, to: timestamp, duration: frameInterval) { _ = input.append(finalFrame) }
+    }
+
+    private static func retime(_ frame: CMSampleBuffer, to timestamp: CMTime, duration: CMTime) -> CMSampleBuffer? {
+        var timing = CMSampleTimingInfo(duration: duration, presentationTimeStamp: timestamp, decodeTimeStamp: .invalid)
+        var copy: CMSampleBuffer?
+        let status = CMSampleBufferCreateCopyWithNewTiming(allocator: nil, sampleBuffer: frame, sampleTimingEntryCount: 1,
+                                                           sampleTimingArray: &timing, sampleBufferOut: &copy)
+        return status == noErr ? copy : nil
     }
 
     private func fail() {

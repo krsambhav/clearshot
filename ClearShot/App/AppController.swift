@@ -11,6 +11,7 @@ final class AppController {
 
     private let capturer = ScreenCapturer()
     private var overlay: CaptureOverlayController?
+    private let recordingOverlay = RecordingOverlay()
     private var isCapturing = false
     private var recognitionTask: Task<Void, Never>?
     private let prefs = Preferences.shared
@@ -32,7 +33,12 @@ final class AppController {
     func toggleRecording() {
         let recorder = ScreenRecorder.shared
         if recorder.isBusy {
+            StatusBarController.shared?.closeMenu()
             recorder.stop()
+            return
+        }
+        if recordingOverlay.isVisible {
+            recordingOverlay.dismiss()
             return
         }
         guard !isCapturing else { return }
@@ -41,16 +47,19 @@ final class AppController {
             OnboardingWindowController.shared.show(startAtPermission: true)
             return
         }
-        guard let screen = NSScreen.withMouse else {
+        guard !NSScreen.screens.isEmpty else {
             ToastCenter.shared.show(.error, "Couldn't record screen", detail: CaptureError.noDisplay.localizedDescription)
             return
         }
         StatusBarController.shared?.closeMenu()
-        recorder.start(on: screen, in: prefs.exportFolder)
+        recordingOverlay.present { [weak self] screen, region in
+            guard let self else { return }
+            recorder.start(on: screen, region: region, in: prefs.exportFolder)
+        }
     }
 
     func capture(_ mode: CaptureMode) {
-        guard !isCapturing else { return }
+        guard !isCapturing, !recordingOverlay.isVisible else { return }
         guard ScreenPermission.isGranted else {
             ScreenPermission.request()
             OnboardingWindowController.shared.show(startAtPermission: true)
