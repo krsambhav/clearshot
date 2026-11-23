@@ -6,21 +6,21 @@ import SwiftUI
 final class RecordingOverlay {
     private var panels: [OverlayPanel] = []
     private var previousApp: NSRunningApplication?
-    private var completion: ((NSScreen, CGRect?) -> Void)?
+    private var completion: ((NSScreen, RecordingTarget, RecordingAudioOptions) -> Void)?
+    private let selection = RecordingSelection()
+    private var windowLookup: Task<Void, Never>?
+    private var windows: [WindowTarget] = []
 
-    func present(_ completion: @escaping (NSScreen, CGRect?) -> Void) {
+    func present(_ completion: @escaping (NSScreen, RecordingTarget, RecordingAudioOptions) -> Void) {
         self.completion = completion
         previousApp = NSWorkspace.shared.frontmostApplication
         let activeScreen = NSScreen.withMouse
+        selection.options = RecordingAudioOptions()
         for screen in NSScreen.screens {
             let panel = OverlayPanel(screen: screen)
             panel.isOpaque = false
             panel.backgroundColor = .clear
-            let view = RecordingSelectionView(size: screen.frame.size) { [weak self] region in
-                self?.select(screen, region: region)
-            } cancel: { [weak self] in
-                self?.dismiss()
-            }
+            let view = RecordingSelectionView(screen: screen, selection: selection, overlay: self)
             panel.contentView = view
             panels.append(panel)
             panel.orderFrontRegardless()
@@ -33,6 +33,11 @@ final class RecordingOverlay {
 
     func dismiss() {
         completion = nil
+        windowLookup?.cancel()
+        windowLookup = nil
+        windows = []
+        selection.windowMode = false
+        selection.windowPrompt = ""
         for panel in panels { panel.orderOut(nil) }
         panels.removeAll()
         if let previousApp, previousApp != NSRunningApplication.current, !previousApp.isTerminated {
@@ -45,24 +50,70 @@ final class RecordingOverlay {
 
     var isVisible: Bool { !panels.isEmpty }
 
-    private func select(_ screen: NSScreen, region: CGRect?) {
+    fileprivate func select(_ screen: NSScreen, target: RecordingTarget) {
         guard let completion else { return }
+        let audio = selection.options
         dismiss()
-        completion(screen, region)
+        completion(screen, target, audio)
+    }
+
+    fileprivate func toggleWindowMode() {
+        selection.windowMode.toggle()
+        windowLookup?.cancel()
+        windows = []
+        selection.windowPrompt = "Finding windows…"
+        refreshSelection(modeChanged: true)
+        guard selection.windowMode else { return }
+        windowLookup = Task {
+            do {
+                let targets = try await ScreenCapturer().recordingWindows()
+                guard !Task.isCancelled else { return }
+                windows = targets
+                selection.windowPrompt = targets.isEmpty ? "No windows available" : "Click a window"
+                refreshSelection()
+            } catch {
+                guard !Task.isCancelled else { return }
+                selection.windowMode = false
+                refreshSelection(modeChanged: true)
+                ToastCenter.shared.show(.error, "Couldn't list windows", detail: error.localizedDescription)
+            }
+        }
+    }
+
+    fileprivate func window(at point: CGPoint) -> WindowTarget? {
+        windows.first { $0.frame.contains(point) }
+    }
+
+    fileprivate func refreshSelection(modeChanged: Bool = false) {
+        for panel in panels {
+            guard let view = panel.contentView as? RecordingSelectionView else { continue }
+            if modeChanged { panel.invalidateCursorRects(for: view) }
+            view.refreshWindowHighlight()
+        }
     }
 }
 
+@Observable
+private final class RecordingSelection {
+    var options = RecordingAudioOptions()
+    var windowMode = false
+    var windowPrompt = ""
+}
+
 private final class RecordingSelectionView: NSView {
-    private let select: (CGRect?) -> Void
-    private let cancel: () -> Void
+    private let screen: NSScreen
+    private let selection: RecordingSelection
+    private unowned let overlay: RecordingOverlay
     private let shade = CAShapeLayer()
     private let outline = CAShapeLayer()
     private var origin: CGPoint?
+    private var windowClickStarted = false
 
-    init(size: CGSize, select: @escaping (CGRect?) -> Void, cancel: @escaping () -> Void) {
-        self.select = select
-        self.cancel = cancel
-        super.init(frame: CGRect(origin: .zero, size: size))
+    init(screen: NSScreen, selection: RecordingSelection, overlay: RecordingOverlay) {
+        self.screen = screen
+        self.selection = selection
+        self.overlay = overlay
+        super.init(frame: CGRect(origin: .zero, size: screen.frame.size))
         wantsLayer = true
         shade.fillColor = NSColor(white: 0.28, alpha: 0.28).cgColor
         shade.fillRule = .evenOdd
@@ -73,16 +124,11 @@ private final class RecordingSelectionView: NSView {
         layer?.addSublayer(shade)
         layer?.addSublayer(outline)
 
-        let toolbar = RecordingHostingView(rootView: HStack(spacing: Space.md) {
-            Text("Drag to record an area")
-                .textStyle(.body)
-            Button("Record Full Screen", systemImage: "display") { select(nil) }
-                .buttonStyle(.shad(.primary, size: .sm))
-            Button("Cancel", action: cancel)
-                .buttonStyle(.shad(.ghost, size: .sm))
-        }
-        .padding(Space.sm)
-        .recordingPanelChrome())
+        let toolbar = RecordingHostingView(rootView: RecordingSelectionToolbar(
+            selection: selection,
+            fullScreen: { [weak overlay] in overlay?.select(screen, target: .display(region: nil)) },
+            cancel: { [weak overlay] in overlay?.dismiss() }
+        ))
         let size = toolbar.fittingSize
         toolbar.frame = CGRect(x: (bounds.width - size.width) / 2, y: bounds.height - size.height - 48,
                                width: size.width, height: size.height)
@@ -98,13 +144,34 @@ private final class RecordingSelectionView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func resetCursorRects() {
-        addCursorRect(bounds, cursor: .crosshair)
+        addCursorRect(bounds, cursor: selection.windowMode ? .pointingHand : .crosshair)
         if let toolbar = subviews.first { addCursorRect(toolbar.frame, cursor: .arrow) }
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.activeAlways, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) { mouseMoved(with: event) }
+    override func mouseExited(with event: NSEvent) {
+        if selection.windowMode { overlay.refreshSelection() }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        if let window, !window.isKeyWindow {
+            window.makeKey()
+            window.makeFirstResponder(self)
+        }
+        if selection.windowMode { overlay.refreshSelection() }
     }
 
     override func mouseDown(with event: NSEvent) {
         window?.makeKey()
         window?.makeFirstResponder(self)
+        windowClickStarted = selection.windowMode
+        guard !selection.windowMode else { return }
         origin = convert(event.locationInWindow, from: nil)
     }
 
@@ -113,18 +180,42 @@ private final class RecordingSelectionView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if selection.windowMode {
+            if windowClickStarted, let target = overlay.window(at: NSEvent.mouseLocation) {
+                overlay.select(screen, target: .window(target))
+            }
+            windowClickStarted = false
+            return
+        }
         let region = selection(at: convert(event.locationInWindow, from: nil))
         origin = nil
         updateSelection(nil)
-        if let region, region.width >= 8, region.height >= 8 { select(region) }
+        if let region, region.width >= 8, region.height >= 8 { overlay.select(screen, target: .display(region: region)) }
     }
 
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 36, 76: select(nil)
-        case 53: cancel()
+        case 36, 76: overlay.select(screen, target: .display(region: nil))
+        case 49:
+            guard !event.isARepeat else { return }
+            origin = nil
+            windowClickStarted = false
+            overlay.toggleWindowMode()
+        case 53: overlay.dismiss()
         default: super.keyDown(with: event)
         }
+    }
+
+    fileprivate func refreshWindowHighlight() {
+        let mouse = NSEvent.mouseLocation
+        guard selection.windowMode, let target = overlay.window(at: mouse) else {
+            updateSelection(nil)
+            return
+        }
+        let frame = target.frame
+        let local = CGRect(x: frame.minX - screen.frame.minX, y: screen.frame.maxY - frame.maxY,
+                           width: frame.width, height: frame.height).intersection(bounds)
+        updateSelection(local.isNull ? nil : local)
     }
 
     private func selection(at point: CGPoint) -> CGRect? {
@@ -143,6 +234,42 @@ private final class RecordingSelectionView: NSView {
         shade.path = path
         outline.path = selection.map { CGPath(rect: $0, transform: nil) }
         CATransaction.commit()
+    }
+}
+
+private struct RecordingSelectionToolbar: View {
+    @Bindable var selection: RecordingSelection
+    let fullScreen: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            HStack(spacing: Space.md) {
+                Text(selection.windowMode ? selection.windowPrompt : "Drag to record an area")
+                    .textStyle(.body)
+                    .frame(minWidth: 144, alignment: .leading)
+                Button("Record Full Screen", systemImage: "display", action: fullScreen)
+                    .buttonStyle(.shad(.primary, size: .sm))
+                Button("Cancel", action: cancel)
+                    .buttonStyle(.shad(.ghost, size: .sm))
+            }
+            HStack(spacing: Space.lg) {
+                Toggle("System Audio", isOn: $selection.options.system)
+                    .help(selection.windowMode ? "Record audio from the selected window’s app" : "Record audio playing on your Mac")
+                Toggle("Microphone", isOn: $selection.options.microphone)
+                    .help("Record from your Mac’s default microphone")
+                Spacer(minLength: 0)
+                Text(selection.windowMode ? "Space for area" : "Space for window")
+                    .textStyle(.footnote)
+                    .foregroundStyle(Theme.mutedForeground)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.small)
+            .padding(.horizontal, Space.xs)
+        }
+        .fixedSize()
+        .padding(Space.sm)
+        .recordingPanelChrome()
     }
 }
 

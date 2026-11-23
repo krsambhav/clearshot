@@ -47,6 +47,7 @@
 		E50592A19F666AAEEF7F8C39 /* Components.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0F4D37305B7DC3CD7099B70F /* Components.swift */; };
 		E7724C69C68FF19D68086ABC /* AnnotationRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8859CA59B7F1911F9E0DDD2D /* AnnotationRenderer.swift */; };
 		F6EEF8826CD37F35CF413B95 /* HistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 187738EB1DAE951F451CFE03 /* HistoryStore.swift */; };
+		F84236255FFA702C6F9FC3A4 /* RecordingAudioMix.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A9178B14296AB5E94E801A9 /* RecordingAudioMix.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -68,6 +69,7 @@
 		6081BD40471915FDC6A102C0 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		642CF0CC15F151F436AF6693 /* ClearShot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClearShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		69BCD8717F819C6C7293B63F /* ScreenCapturer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCapturer.swift; sourceTree = "<group>"; };
+		6A9178B14296AB5E94E801A9 /* RecordingAudioMix.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingAudioMix.swift; sourceTree = "<group>"; };
 		6F884E6AE3F9389832B6F244 /* EditorModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorModel.swift; sourceTree = "<group>"; };
 		7BC54B9ED060AD199D522DF8 /* Utilities.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Utilities.swift; sourceTree = "<group>"; };
 		82184FA2304DD41151CC6575 /* StatusBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarController.swift; sourceTree = "<group>"; };
@@ -245,6 +247,7 @@
 			isa = PBXGroup;
 			children = (
 				AE5D06B1E27F7A08B13C4507 /* CaptureOverlay.swift */,
+				6A9178B14296AB5E94E801A9 /* RecordingAudioMix.swift */,
 				A284276575B5978D2E6FCC13 /* RecordingOverlay.swift */,
 				69BCD8717F819C6C7293B63F /* ScreenCapturer.swift */,
 				526421FF76E61CBFC084759D /* ScreenRecorder.swift */,
@@ -378,6 +381,7 @@
 				52A51F32703D0547B036E37D /* PinController.swift in Sources */,
 				2B09A5693783507E8053CFDB /* Preferences.swift in Sources */,
 				3C76EAC88BB18CCEBA13E575 /* QuickAccess.swift in Sources */,
+				F84236255FFA702C6F9FC3A4 /* RecordingAudioMix.swift in Sources */,
 				9D0D8578E1CD4394468A00B6 /* RecordingOverlay.swift in Sources */,
 				548DB9F255FBB08B45CA19DD /* ScreenCapturer.swift in Sources */,
 				30DB870F5D5F9EEFE2DED052 /* ScreenRecorder.swift in Sources */,

@@ -125,6 +125,12 @@ final class ScreenCapturer {
     }
 
     /// ClearShot's own windows (editor, Settings, History) are pickable like any other app's.
+    func recordingWindows() async throws -> [WindowTarget] {
+        let content = try await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: true)
+        let hidden = Set(NSApp.windows.filter { $0 is TransientPanel && $0.isVisible }.map { CGWindowID($0.windowNumber) })
+        return Self.windowTargets(from: content, hiding: hidden)
+    }
+
     private static func windowTargets(from content: SCShareableContent, hiding hidden: Set<CGWindowID>) -> [WindowTarget] {
         let primaryHeight = NSScreen.screens.first?.frame.height ?? 0
         let excludedOwners: Set<String> = ["com.apple.dock", "com.apple.WindowManager", "com.apple.controlcenter", "com.apple.notificationcenterui"]

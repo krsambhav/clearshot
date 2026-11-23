@@ -21,6 +21,7 @@ targets:
       - path: ClearShot
         excludes:
           - "Resources/Info.plist"
+          - "Resources/ClearShot.entitlements"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.clearshot.ClearShot

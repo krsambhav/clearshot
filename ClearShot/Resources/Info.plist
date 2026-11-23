@@ -45,6 +45,8 @@
 	<string>$(PRODUCT_NAME)</string>
 	<key>NSDocumentsFolderUsageDescription</key>
 	<string>ClearShot saves your screenshots and screen recordings to Documents/ClearShot.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>ClearShot records microphone audio when you enable Microphone for a screen recording.</string>
 	<key>NSScreenCaptureUsageDescription</key>
 	<string>ClearShot captures your screen when you take a screenshot, extract text, or record a video.</string>
 	<key>CFBundlePackageType</key>

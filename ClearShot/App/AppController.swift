@@ -52,9 +52,9 @@ final class AppController {
             return
         }
         StatusBarController.shared?.closeMenu()
-        recordingOverlay.present { [weak self] screen, region in
+        recordingOverlay.present { [weak self] screen, target, audio in
             guard let self else { return }
-            recorder.start(on: screen, region: region, in: prefs.exportFolder)
+            recorder.start(on: screen, target: target, audio: audio, in: prefs.exportFolder)
         }
     }
 

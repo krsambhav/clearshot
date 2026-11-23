@@ -3,6 +3,16 @@ import AVFoundation
 @preconcurrency import ScreenCaptureKit
 import VideoToolbox
 
+struct RecordingAudioOptions {
+    var system = false
+    var microphone = false
+}
+
+enum RecordingTarget {
+    case display(region: CGRect?)
+    case window(WindowTarget)
+}
+
 @MainActor
 @Observable
 final class ScreenRecorder {
@@ -36,12 +46,8 @@ final class ScreenRecorder {
     @ObservationIgnored private var onStopped: (() -> Void)?
     @ObservationIgnored private var controls: RecordingControlsPanel?
 
-    func start(on screen: NSScreen, region: CGRect?, in folder: URL) {
+    func start(on screen: NSScreen, target: RecordingTarget, audio: RecordingAudioOptions, in folder: URL) {
         guard phase == .idle else { return }
-        guard let displayID = screen.displayID else {
-            ToastCenter.shared.show(.error, "Couldn't start recording", detail: CaptureError.noDisplay.localizedDescription)
-            return
-        }
         let id = UUID()
         activeID = id
         phase = .starting
@@ -56,27 +62,37 @@ final class ScreenRecorder {
         let stamp = Date()
         Task { [self] in
             do {
-                let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+                if audio.microphone {
+                    let authorized = await AVCaptureDevice.requestAccess(for: .audio)
+                    if !authorized, !stopRequested { throw RecordingError.microphonePermission }
+                }
                 if stopRequested {
                     reset()
                     return
                 }
-                guard let display = content.displays.first(where: { $0.displayID == displayID }) else {
-                    throw CaptureError.noDisplay
+                let filter: SCContentFilter
+                let region: CGRect?
+                switch target {
+                case .display(let area):
+                    filter = try await Self.displayFilter(for: screen, excluding: controlsID)
+                    region = area
+                case .window(let target):
+                    filter = SCContentFilter(desktopIndependentWindow: target.window)
+                    region = nil
+                }
+                if stopRequested {
+                    reset()
+                    return
                 }
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
                 let draft = folder.appendingPathComponent(".clearshot-\(UUID()).mp4")
 
-                let filter: SCContentFilter
-                if let panel = content.windows.first(where: { $0.windowID == controlsID }) {
-                    filter = SCContentFilter(display: display, excludingWindows: [panel])
-                } else if let app = content.applications.first(where: { $0.processID == ProcessInfo.processInfo.processIdentifier }) {
-                    // A newly ordered panel may not be listed yet. Keep it excluded by its owning app.
-                    filter = SCContentFilter(display: display, excludingApplications: [app], exceptingWindows: [])
-                } else {
-                    throw RecordingError.controlsNotExcludable
-                }
                 let config = Self.configuration(for: filter, region: region, highRefreshDisplay: displayRate > 60)
+                config.capturesAudio = audio.system
+                config.captureMicrophone = audio.microphone
+                config.sampleRate = 48_000
+                config.channelCount = 2
+                if case .window = target { config.ignoreShadowsSingleWindow = true }
                 let writer = try RecordingWriter(url: draft, configuration: config, frameRate: frameRate,
                                                  limitFrameRate: displayRate > frameRate || displayRate <= 0) { [weak self] error in
                     Task { @MainActor in self?.interrupted(id: id, error: error, streamStopped: false) }
@@ -85,9 +101,16 @@ final class ScreenRecorder {
                     Task { @MainActor in self?.interrupted(id: id, error: error, streamStopped: true) }
                 }
                 let stream = SCStream(filter: filter, configuration: config, delegate: delegate)
-                let recording = Session(stream: stream, delegate: delegate, writer: writer, draft: draft, date: stamp)
+                let recording = Session(stream: stream, delegate: delegate, writer: writer, draft: draft,
+                                        date: stamp, needsAudioMix: audio.system && audio.microphone)
                 session = recording
                 try stream.addStreamOutput(writer, type: .screen, sampleHandlerQueue: writer.queue)
+                if audio.system {
+                    try stream.addStreamOutput(writer, type: .audio, sampleHandlerQueue: writer.queue)
+                }
+                if audio.microphone {
+                    try stream.addStreamOutput(writer, type: .microphone, sampleHandlerQueue: writer.queue)
+                }
                 try await stream.startCapture()
                 guard phase == .starting, activeID == id else { return }
                 phase = .recording
@@ -161,13 +184,28 @@ final class ScreenRecorder {
             if !streamStopped { try? await session.stream.stopCapture() }
             do {
                 try await session.writer.finish(at: end)
+                let mixError: Error?
+                if session.needsAudioMix {
+                    do {
+                        try await RecordingAudioMix.replaceAudioTracks(in: session.draft)
+                        mixError = nil
+                    } catch {
+                        mixError = error
+                    }
+                } else {
+                    mixError = nil
+                }
                 let url = FileNaming.uniqueURL(in: session.draft.deletingLastPathComponent(),
                                                baseName: "\(FileNaming.baseName(for: session.date)) Recording", ext: "mp4")
                 do {
                     try FileManager.default.moveItem(at: session.draft, to: url)
                     lastRecording = url
-                    let title = interruption == nil ? "Recording saved" : "Recording ended and was saved"
-                    ToastCenter.shared.show(.success, title, detail: url.abbreviatedPath)
+                    if let mixError {
+                        ToastCenter.shared.show(.warning, "Recording saved with separate audio tracks", detail: mixError.localizedDescription)
+                    } else {
+                        let title = interruption == nil ? "Recording saved" : "Recording ended and was saved"
+                        ToastCenter.shared.show(.success, title, detail: url.abbreviatedPath)
+                    }
                 } catch {
                     lastRecording = session.draft
                     ToastCenter.shared.show(.warning, "Recording saved under a temporary name", detail: error.localizedDescription)
@@ -197,6 +235,21 @@ final class ScreenRecorder {
         CMClockGetTime(stream.synchronizationClock ?? CMClockGetHostTimeClock())
     }
 
+    private static func displayFilter(for screen: NSScreen, excluding controlsID: CGWindowID) async throws -> SCContentFilter {
+        let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: false)
+        guard let display = content.displays.first(where: { $0.displayID == screen.displayID }) else {
+            throw CaptureError.noDisplay
+        }
+        if let panel = content.windows.first(where: { $0.windowID == controlsID }) {
+            return SCContentFilter(display: display, excludingWindows: [panel])
+        }
+        // A newly ordered panel may not be listed yet. Keep it excluded by its owning app.
+        if let app = content.applications.first(where: { $0.processID == ProcessInfo.processInfo.processIdentifier }) {
+            return SCContentFilter(display: display, excludingApplications: [app], exceptingWindows: [])
+        }
+        throw RecordingError.controlsNotExcludable
+    }
+
     private static func configuration(for filter: SCContentFilter, region: CGRect?, highRefreshDisplay: Bool) -> SCStreamConfiguration {
         let size = region?.size ?? filter.contentRect.size
         let pixelWidth = size.width * CGFloat(filter.pointPixelScale)
@@ -223,6 +276,7 @@ final class ScreenRecorder {
         let writer: RecordingWriter
         let draft: URL
         let date: Date
+        let needsAudioMix: Bool
     }
 }
 
@@ -239,7 +293,7 @@ private nonisolated final class StreamDelegate: NSObject, SCStreamDelegate {
 }
 
 private nonisolated enum RecordingError: LocalizedError {
-    case encoderUnavailable, noFrames, encodingFailed, controlsNotExcludable
+    case encoderUnavailable, noFrames, encodingFailed, controlsNotExcludable, microphonePermission, audioEncoderUnavailable
 
     var errorDescription: String? {
         switch self {
@@ -247,21 +301,26 @@ private nonisolated enum RecordingError: LocalizedError {
         case .noFrames: "The display didn’t deliver any video frames."
         case .encodingFailed: "The video encoder couldn’t complete the recording."
         case .controlsNotExcludable: "ClearShot couldn’t hide the recording controls from the video."
+        case .microphonePermission: "Allow ClearShot in System Settings → Privacy & Security → Microphone, or turn off Microphone in the recording picker."
+        case .audioEncoderUnavailable: "An audio encoder is unavailable for this recording."
         }
     }
 }
 
 /// Serializes frame admission and finalization on the same queue.
 private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unchecked Sendable {
-    let queue = DispatchQueue(label: "app.clearshot.recording.video", qos: .userInitiated)
+    let queue = DispatchQueue(label: "app.clearshot.recording", qos: .userInitiated)
     private let asset: AVAssetWriter
     private let input: AVAssetWriterInput
+    private let audioInputs: [SCStreamOutputType: AVAssetWriterInput]
     private let onFailure: @Sendable (Error) -> Void
     private let frameInterval: CMTime
     private let limitFrameRate: Bool
     private let frameTimingTolerance = CMTime(value: 1, timescale: 1000)
     private var nextFrameTime = CMTime.invalid
     private var lastFrame: CMSampleBuffer?
+    private var sessionStart = CMTime.invalid
+    private var audioEndTimes: [SCStreamOutputType: CMTime] = [:]
     private var acceptingFrames = true
     private var pauseStart: CMTime?
     private var resumedAt: CMTime?
@@ -289,6 +348,16 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
         input.expectsMediaDataInRealTime = true
         guard asset.canAdd(input) else { throw RecordingError.encoderUnavailable }
         asset.add(input)
+        var audioInputs: [SCStreamOutputType: AVAssetWriterInput] = [:]
+        let enabledAudio: [(SCStreamOutputType, Bool)] = [(.audio, configuration.capturesAudio), (.microphone, configuration.captureMicrophone)]
+        for (type, enabled) in enabledAudio where enabled {
+            let audio = AVAssetWriterInput(mediaType: .audio, outputSettings: RecordingAudioMix.aacSettings)
+            audio.expectsMediaDataInRealTime = true
+            guard asset.canAdd(audio) else { throw RecordingError.audioEncoderUnavailable }
+            asset.add(audio)
+            audioInputs[type] = audio
+        }
+        self.audioInputs = audioInputs
         asset.movieTimeScale = 60000
         frameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
         self.limitFrameRate = limitFrameRate
@@ -296,10 +365,15 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard acceptingFrames, pauseStart == nil, type == .screen, sampleBuffer.isValid, sampleBuffer.imageBuffer != nil else { return }
+        guard acceptingFrames, pauseStart == nil, sampleBuffer.isValid else { return }
         let sourceTime = sampleBuffer.presentationTimeStamp
         guard sourceTime.isNumeric, sourceTime >= (resumedAt ?? .negativeInfinity) else { return }
         let timestamp = sourceTime - pausedDuration
+        if type != .screen {
+            appendAudio(sampleBuffer, type: type, at: timestamp)
+            return
+        }
+        guard sampleBuffer.imageBuffer != nil else { return }
         guard timestamp > (lastFrame?.presentationTimeStamp ?? .negativeInfinity) else { return }
         if nextFrameTime.isValid, timestamp + frameTimingTolerance < nextFrameTime { return }
         guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
@@ -309,6 +383,7 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
         if asset.status == .unknown {
             guard asset.startWriting() else { fail(); return }
             asset.startSession(atSourceTime: timestamp)
+            sessionStart = timestamp
         }
         guard asset.status == .writing else { fail(); return }
         // Drop frames under encoder backpressure and retain only the most recent accepted frame.
@@ -327,6 +402,29 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
             // Follow the output cadence through small timestamp jitter and skip missed slots.
             let earliest = timestamp - frameTimingTolerance
             nextFrameTime = (nextFrameTime.isValid ? max(nextFrameTime, earliest) : timestamp) + frameInterval
+        }
+    }
+
+    private func appendAudio(_ buffer: CMSampleBuffer, type: SCStreamOutputType, at timestamp: CMTime) {
+        guard asset.status == .writing, timestamp >= sessionStart,
+              timestamp >= (audioEndTimes[type] ?? sessionStart),
+              let audio = audioInputs[type], audio.isReadyForMoreMediaData else { return }
+        do {
+            // Preserve PCM sample durations and shift the whole buffer by the same pause offset as video.
+            let sample = pausedDuration == .zero ? buffer : try CMSampleBuffer(
+                copying: buffer, withNewTiming: buffer.sampleTimingInfos().map {
+                    var timing = $0
+                    timing.presentationTimeStamp = timing.presentationTimeStamp - pausedDuration
+                    if timing.decodeTimeStamp.isNumeric {
+                        timing.decodeTimeStamp = timing.decodeTimeStamp - pausedDuration
+                    }
+                    return timing
+                })
+            guard audio.append(sample) else { fail(); return }
+            audioEndTimes[type] = timestamp + (buffer.duration.isNumeric ? buffer.duration : .zero)
+        } catch {
+            acceptingFrames = false
+            onFailure(error)
         }
     }
 
@@ -358,6 +456,7 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
                 self.extend(lastFrame, to: end)
                 self.asset.endSession(atSourceTime: end)
                 self.input.markAsFinished()
+                for audio in self.audioInputs.values { audio.markAsFinished() }
                 self.asset.finishWriting {
                     if self.asset.status == .completed {
                         continuation.resume()
