@@ -2,7 +2,7 @@
 
 # ClearShot
 
-A fast, open-source screenshot and text-capture tool for macOS. Native Swift, on-device OCR, no account.
+A fast, open-source screenshot, screen recording, and text-capture tool for macOS. Native Swift, on-device OCR, no account.
 
 ## Install
 
@@ -16,10 +16,12 @@ Works on any Mac running macOS 15 or later (Apple silicon and Intel). It install
 
 - **Capture text (OCR):** select any area and the text is on your clipboard instantly (Apple Vision, on-device). Also reads QR codes and barcodes.
 - **Area, window and fullscreen capture:** the screen freezes on capture; there's a crosshair, Space to switch to window mode, ⇧ for square, ⌥ to draw from the center.
+- **Screen recording:** choose **Record Screen** in the menu bar or press ⌥⇧⌘6 to record the display under the pointer. Use the same shortcut or **Stop Recording** to save a video-only MP4 to your configured export folder. **Show Last Recording** reveals the file in Finder.
+  ClearShot follows the display's refresh rate up to 120 fps on ProMotion and limits capture resolution at high frame rates to reduce the load on the system.
 - **Quick Access:** a thumbnail after every capture. Drag it into any app, or hover to copy, save, annotate or pin.
 - **Pin to screen:** floating, always-on-top screenshots. Scroll or pinch to zoom, right-click for opacity.
 - **Annotate:** arrow, line, rectangle, ellipse, pen, highlighter, text, numbered counters, pixelate/blur, spotlight and crop, plus a background frame for sharing. Edits are non-destructive.
-- **History:** every capture is kept locally and is searchable by the text inside it.
+- **History:** screenshots and text captures are kept locally and are searchable by the text inside them.
 
 | Shortcut | Action |
 |---|---|
@@ -27,11 +29,12 @@ Works on any Mac running macOS 15 or later (Apple silicon and Intel). It install
 | ⇧⌘3 | Capture fullscreen |
 | ⇧⌘4 | Capture area |
 | ⇧⌘5 | Capture window |
+| ⌥⇧⌘6 | Start or stop screen recording |
 | ⇧⌘H | Open history |
 
 ⇧⌘3, ⇧⌘4 and ⇧⌘5 are also the macOS screenshot shortcuts. To let ClearShot handle them, turn those off in System Settings → Keyboard → Keyboard Shortcuts → Screenshots. You can also change any shortcut in ClearShot's settings.
 
-URL scheme for launchers like Raycast and Alfred: `clearshot://capture-area`, `capture-window`, `capture-fullscreen`, `capture-text`, `history`, `settings`.
+URL scheme for launchers like Raycast and Alfred: `clearshot://capture-area`, `capture-window`, `capture-fullscreen`, `capture-text`, `record-screen`, `history`, `settings`.
 
 ## Building
 

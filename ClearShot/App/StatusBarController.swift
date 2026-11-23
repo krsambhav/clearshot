@@ -64,6 +64,20 @@ final class StatusBarController {
         panel.orderOut(nil)
     }
 
+    func indicateRecording(_ recording: Bool) {
+        guard let button = item.button else { return }
+        if recording {
+            let image = NSImage(systemSymbolName: "record.circle.fill", accessibilityDescription: nil)
+            image?.isTemplate = true
+            button.image = image
+            button.contentTintColor = .systemRed
+        } else {
+            button.image = Self.icon()
+            button.contentTintColor = nil
+        }
+        button.setAccessibilityLabel(recording ? "ClearShot, screen recording" : "ClearShot")
+    }
+
     private func makePanel() -> MenuPanel {
         let panel = MenuPanel()
         let host = NSHostingView(rootView: StatusMenu(close: { [weak self] in self?.closeMenu() }))
@@ -145,9 +159,10 @@ struct StatusMenu: View {
     @FocusState private var focused: Bool
     private let prefs = Preferences.shared
     private let history = HistoryStore.shared
+    private let recorder = ScreenRecorder.shared
 
     private var captureEntries: [MenuEntry] {
-        [HotkeyAction.captureArea, .captureWindow, .captureFullscreen, .captureText].map { action in
+        var entries = [HotkeyAction.captureArea, .captureWindow, .captureFullscreen, .captureText].map { action in
             MenuEntry(id: action.rawValue, title: action.title, symbol: action.symbol, shortcut: prefs.shortcuts[action]) {
                 close()
                 // Let the menu fade before the screen freezes.
@@ -157,6 +172,19 @@ struct StatusMenu: View {
                 }
             }
         }
+        let action = HotkeyAction.recordScreen
+        entries.append(MenuEntry(id: action.rawValue, title: recorder.menuTitle, symbol: recorder.isBusy ? "stop.circle" : action.symbol,
+                                 shortcut: prefs.shortcuts[action]) {
+            close()
+            AppController.shared.perform(action)
+        })
+        if let url = recorder.lastRecording {
+            entries.append(MenuEntry(id: "lastRecording", title: "Show Last Recording", symbol: "folder") {
+                close()
+                recorder.reveal(url)
+            })
+        }
+        return entries
     }
 
     private var appEntries: [MenuEntry] {

@@ -35,7 +35,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HistoryStore.shared.saveNow()
     }
 
-    /// clearshot://capture-area | capture-window | capture-fullscreen | capture-text | history | settings
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let recorder = ScreenRecorder.shared
+        guard recorder.isBusy else { return .terminateNow }
+        recorder.stop { sender.reply(toApplicationShouldTerminate: true) }
+        return .terminateLater
+    }
+
+    /// clearshot://capture-area | capture-window | capture-fullscreen | capture-text | record-screen | history | settings
     /// and image files dropped on the app, which open in the editor.
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls {
@@ -49,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             case "capture-window": AppController.shared.capture(.window)
             case "capture-fullscreen": AppController.shared.capture(.fullscreen)
             case "capture-text": AppController.shared.capture(.text)
+            case "record-screen": AppController.shared.toggleRecording()
             case "history": HistoryWindowController.shared.show()
             case "settings": SettingsWindowController.shared.show()
             default: break
@@ -90,6 +98,7 @@ enum MainMenu {
         for action in [HotkeyAction.captureArea, .captureWindow, .captureFullscreen, .captureText] {
             captureMenu.addItem(ClosureMenuItem(title: action.title) { AppController.shared.perform(action) })
         }
+        captureMenu.addItem(ClosureMenuItem(title: "Start or Stop Recording") { AppController.shared.toggleRecording() })
         captureItem.submenu = captureMenu
         main.addItem(captureItem)
 

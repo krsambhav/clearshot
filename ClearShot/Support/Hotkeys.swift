@@ -2,7 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 
 enum HotkeyAction: String, CaseIterable, Codable, Identifiable {
-    case captureArea, captureWindow, captureFullscreen, captureText, openHistory
+    case captureArea, captureWindow, captureFullscreen, captureText, openHistory, recordScreen
 
     var id: String { rawValue }
 
@@ -13,6 +13,7 @@ enum HotkeyAction: String, CaseIterable, Codable, Identifiable {
         case .captureFullscreen: "Capture fullscreen"
         case .captureText: "Capture text"
         case .openHistory: "Open history"
+        case .recordScreen: "Record screen"
         }
     }
 
@@ -23,6 +24,7 @@ enum HotkeyAction: String, CaseIterable, Codable, Identifiable {
         case .captureFullscreen: "display"
         case .captureText: "text.viewfinder"
         case .openHistory: "clock.arrow.circlepath"
+        case .recordScreen: "record.circle"
         }
     }
 
@@ -32,6 +34,7 @@ enum HotkeyAction: String, CaseIterable, Codable, Identifiable {
         .captureArea: Shortcut(keyCode: UInt32(kVK_ANSI_4), modifiers: [.command, .shift]),
         .captureWindow: Shortcut(keyCode: UInt32(kVK_ANSI_5), modifiers: [.command, .shift]),
         .openHistory: Shortcut(keyCode: UInt32(kVK_ANSI_H), modifiers: [.command, .shift]),
+        .recordScreen: Shortcut(keyCode: UInt32(kVK_ANSI_6), modifiers: [.command, .option, .shift]),
     ]
 }
 

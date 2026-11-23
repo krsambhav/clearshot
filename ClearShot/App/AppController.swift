@@ -25,7 +25,28 @@ final class AppController {
         case .captureFullscreen: capture(.fullscreen)
         case .captureText: capture(.text)
         case .openHistory: HistoryWindowController.shared.show()
+        case .recordScreen: toggleRecording()
         }
+    }
+
+    func toggleRecording() {
+        let recorder = ScreenRecorder.shared
+        if recorder.isBusy {
+            recorder.stop()
+            return
+        }
+        guard !isCapturing else { return }
+        guard ScreenPermission.isGranted else {
+            ScreenPermission.request()
+            OnboardingWindowController.shared.show(startAtPermission: true)
+            return
+        }
+        guard let screen = NSScreen.withMouse else {
+            ToastCenter.shared.show(.error, "Couldn't record screen", detail: CaptureError.noDisplay.localizedDescription)
+            return
+        }
+        StatusBarController.shared?.closeMenu()
+        recorder.start(on: screen, in: prefs.exportFolder)
     }
 
     func capture(_ mode: CaptureMode) {

@@ -14,6 +14,7 @@
 		2B09A5693783507E8053CFDB /* Preferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1809FFA48F2EC3C93917FFBF /* Preferences.swift */; };
 		2D6C7D32605124FFCDE6FAFF /* WindowBackdrop.swift in Sources */ = {isa = PBXBuildFile; fileRef = A468FF2BDC9B67EB970FDA62 /* WindowBackdrop.swift */; };
 		301730584039AA2E06703034 /* Toast.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E7816695A04ACB4C487F528 /* Toast.swift */; };
+		30DB870F5D5F9EEFE2DED052 /* ScreenRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = 526421FF76E61CBFC084759D /* ScreenRecorder.swift */; };
 		3C76EAC88BB18CCEBA13E575 /* QuickAccess.swift in Sources */ = {isa = PBXBuildFile; fileRef = E74B8B280FE558284FF6003C /* QuickAccess.swift */; };
 		43021788D117110997FFF3C0 /* PlusJakartaSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C5403320B39F310C7EA826B5 /* PlusJakartaSans-Medium.ttf */; };
 		43745CE3C406545912DB709B /* Updater.swift in Sources */ = {isa = PBXBuildFile; fileRef = 293065051684786CD22CCD2D /* Updater.swift */; };
@@ -61,6 +62,7 @@
 		374B0FF3E948F13B58E483D1 /* WindowFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowFactory.swift; sourceTree = "<group>"; };
 		438E3ACA75DF4CED77A56F71 /* OFL.txt */ = {isa = PBXFileReference; lastKnownFileType = text; path = OFL.txt; sourceTree = "<group>"; };
 		4703C612F90CDA4600B252E5 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		526421FF76E61CBFC084759D /* ScreenRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenRecorder.swift; sourceTree = "<group>"; };
 		59B402844EF3A0419E9268AA /* EditorKeyboard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorKeyboard.swift; sourceTree = "<group>"; };
 		6081BD40471915FDC6A102C0 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		642CF0CC15F151F436AF6693 /* ClearShot.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ClearShot.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -242,6 +244,7 @@
 			children = (
 				AE5D06B1E27F7A08B13C4507 /* CaptureOverlay.swift */,
 				69BCD8717F819C6C7293B63F /* ScreenCapturer.swift */,
+				526421FF76E61CBFC084759D /* ScreenRecorder.swift */,
 				A468FF2BDC9B67EB970FDA62 /* WindowBackdrop.swift */,
 			);
 			path = Capture;
@@ -373,6 +376,7 @@
 				2B09A5693783507E8053CFDB /* Preferences.swift in Sources */,
 				3C76EAC88BB18CCEBA13E575 /* QuickAccess.swift in Sources */,
 				548DB9F255FBB08B45CA19DD /* ScreenCapturer.swift in Sources */,
+				30DB870F5D5F9EEFE2DED052 /* ScreenRecorder.swift in Sources */,
 				18B28640DFF36747D2A4B085 /* SettingsView.swift in Sources */,
 				D8214F3ED1DF78F5ACF48B41 /* ShortcutRecorder.swift in Sources */,
 				A8AB381270364EDD904AF525 /* StatusBarController.swift in Sources */,
