@@ -126,11 +126,13 @@ private final class RecordingSelectionView: NSView {
 
         let toolbar = RecordingHostingView(rootView: RecordingSelectionToolbar(
             selection: selection,
+            toggleWindowMode: { [weak overlay] in overlay?.toggleWindowMode() },
             fullScreen: { [weak overlay] in overlay?.select(screen, target: .display(region: nil)) },
             cancel: { [weak overlay] in overlay?.dismiss() }
         ))
         let size = toolbar.fittingSize
-        toolbar.frame = CGRect(x: (bounds.width - size.width) / 2, y: bounds.height - size.height - 48,
+        let bottomInset = screen.visibleFrame.minY - screen.frame.minY + Space.xl
+        toolbar.frame = CGRect(x: (bounds.width - size.width) / 2, y: bounds.height - size.height - bottomInset,
                                width: size.width, height: size.height)
         addSubview(toolbar)
         updateSelection(nil)
@@ -239,36 +241,56 @@ private final class RecordingSelectionView: NSView {
 
 private struct RecordingSelectionToolbar: View {
     @Bindable var selection: RecordingSelection
+    let toggleWindowMode: () -> Void
     let fullScreen: () -> Void
     let cancel: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Space.sm) {
-            HStack(spacing: Space.md) {
-                Text(selection.windowMode ? selection.windowPrompt : "Drag to record an area")
-                    .textStyle(.body)
-                    .frame(minWidth: 144, alignment: .leading)
-                Button("Record Full Screen", systemImage: "display", action: fullScreen)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: Space.sm) {
+                Text(selection.windowMode ? selection.windowPrompt : "Drag to select an area")
+                    .textStyle(.bodyStrong)
+                    .lineLimit(1)
+                    .frame(width: 150, alignment: .leading)
+                    .accessibilityAddTraits(.updatesFrequently)
+                Button(action: toggleWindowMode) {
+                    HStack(spacing: Space.xs) {
+                        Text("Window").hidden()
+                            .overlay(alignment: .leading) {
+                                Text(selection.windowMode ? "Area" : "Window").fixedSize()
+                            }
+                        Kbd(keys: "Space").accessibilityHidden(true)
+                    }
+                }
+                .buttonStyle(.shad(.ghost, size: .sm))
+                .accessibilityLabel(selection.windowMode ? "Select an area" : "Select a window")
+                .help(selection.windowMode ? "Switch to area selection (Space)" : "Switch to window selection (Space)")
+                ShadSeparator(vertical: true).frame(height: Space.lg)
+                Button("Full Screen", systemImage: "display", action: fullScreen)
                     .buttonStyle(.shad(.primary, size: .sm))
-                Button("Cancel", action: cancel)
-                    .buttonStyle(.shad(.ghost, size: .sm))
+                IconButton(symbol: "xmark", help: "Cancel", size: .iconSm, action: cancel)
             }
-            HStack(spacing: Space.lg) {
-                Toggle("System Audio", isOn: $selection.options.system)
+            .fixedSize()
+            .padding(.leading, Space.md)
+            .padding(.trailing, Space.sm)
+            .padding(.vertical, Space.sm)
+
+            ShadSeparator()
+
+            HStack(spacing: Space.xl) {
+                Toggle(isOn: $selection.options.system) { Text("System Audio").textStyle(.label) }
+                    .fixedSize()
                     .help(selection.windowMode ? "Record audio from the selected window’s app" : "Record audio playing on your Mac")
-                Toggle("Microphone", isOn: $selection.options.microphone)
+                Toggle(isOn: $selection.options.microphone) { Text("Microphone").textStyle(.label) }
+                    .fixedSize()
                     .help("Record from your Mac’s default microphone")
-                Spacer(minLength: 0)
-                Text(selection.windowMode ? "Space for area" : "Space for window")
-                    .textStyle(.footnote)
-                    .foregroundStyle(Theme.mutedForeground)
             }
             .toggleStyle(.switch)
             .controlSize(.small)
-            .padding(.horizontal, Space.xs)
+            .padding(.horizontal, Space.md)
+            .padding(.vertical, Space.sm)
         }
         .fixedSize()
-        .padding(Space.sm)
         .recordingPanelChrome()
     }
 }
