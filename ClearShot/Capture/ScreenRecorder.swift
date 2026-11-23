@@ -76,8 +76,9 @@ final class ScreenRecorder {
                 } else {
                     throw RecordingError.controlsNotExcludable
                 }
-                let config = Self.configuration(for: filter, region: region, frameRate: frameRate, useNativeRate: frameRate > 60 && displayRate == frameRate)
-                let writer = try RecordingWriter(url: draft, configuration: config, frameRate: frameRate) { [weak self] error in
+                let config = Self.configuration(for: filter, region: region, highRefreshDisplay: displayRate > 60)
+                let writer = try RecordingWriter(url: draft, configuration: config, frameRate: frameRate,
+                                                 limitFrameRate: displayRate > frameRate || displayRate <= 0) { [weak self] error in
                     Task { @MainActor in self?.interrupted(id: id, error: error, streamStopped: false) }
                 }
                 let delegate = StreamDelegate { [weak self] error in
@@ -196,7 +197,7 @@ final class ScreenRecorder {
         CMClockGetTime(stream.synchronizationClock ?? CMClockGetHostTimeClock())
     }
 
-    private static func configuration(for filter: SCContentFilter, region: CGRect?, frameRate: Int, useNativeRate: Bool) -> SCStreamConfiguration {
+    private static func configuration(for filter: SCContentFilter, region: CGRect?, highRefreshDisplay: Bool) -> SCStreamConfiguration {
         let size = region?.size ?? filter.contentRect.size
         let pixelWidth = size.width * CGFloat(filter.pointPixelScale)
         let pixelHeight = size.height * CGFloat(filter.pointPixelScale)
@@ -207,12 +208,12 @@ final class ScreenRecorder {
         if let region { config.sourceRect = region }
         config.width = max(2, Int(pixelWidth * scale) / 2 * 2)
         config.height = max(2, Int(pixelHeight * scale) / 2 * 2)
-        // Zero lets ScreenCaptureKit follow the display's native pacing, including variable refresh.
-        config.minimumFrameInterval = useNativeRate ? .zero : CMTime(value: 1, timescale: CMTimeScale(frameRate))
+        // Let ScreenCaptureKit follow the display. Apply the video's frame rate in the writer.
+        config.minimumFrameInterval = .zero
         config.pixelFormat = kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange
         config.colorSpaceName = CGColorSpace.itur_709
         config.showsCursor = true
-        config.queueDepth = frameRate > 60 ? 6 : 4
+        config.queueDepth = highRefreshDisplay ? 6 : 4
         return config
     }
 
@@ -257,13 +258,16 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
     private let input: AVAssetWriterInput
     private let onFailure: @Sendable (Error) -> Void
     private let frameInterval: CMTime
+    private let limitFrameRate: Bool
+    private let frameTimingTolerance = CMTime(value: 1, timescale: 1000)
+    private var nextFrameTime = CMTime.invalid
     private var lastFrame: CMSampleBuffer?
     private var acceptingFrames = true
     private var pauseStart: CMTime?
     private var resumedAt: CMTime?
     private var pausedDuration = CMTime.zero
 
-    init(url: URL, configuration: SCStreamConfiguration, frameRate: Int,
+    init(url: URL, configuration: SCStreamConfiguration, frameRate: Int, limitFrameRate: Bool,
          onFailure: @escaping @Sendable (Error) -> Void) throws {
         asset = try AVAssetWriter(outputURL: url, fileType: .mp4)
         let settings: [String: Any] = [
@@ -287,20 +291,21 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
         asset.add(input)
         asset.movieTimeScale = 60000
         frameInterval = CMTime(value: 1, timescale: CMTimeScale(frameRate))
+        self.limitFrameRate = limitFrameRate
         self.onFailure = onFailure
     }
 
     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
-        guard acceptingFrames, pauseStart == nil, type == .screen, sampleBuffer.isValid, sampleBuffer.imageBuffer != nil,
-              let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
-                as? [[SCStreamFrameInfo: Any]],
-              let rawStatus = attachments.first?[.status] as? Int,
-              let status = SCFrameStatus(rawValue: rawStatus), status == .complete || status == .started else { return }
-
+        guard acceptingFrames, pauseStart == nil, type == .screen, sampleBuffer.isValid, sampleBuffer.imageBuffer != nil else { return }
         let sourceTime = sampleBuffer.presentationTimeStamp
         guard sourceTime.isNumeric, sourceTime >= (resumedAt ?? .negativeInfinity) else { return }
         let timestamp = sourceTime - pausedDuration
         guard timestamp > (lastFrame?.presentationTimeStamp ?? .negativeInfinity) else { return }
+        if nextFrameTime.isValid, timestamp + frameTimingTolerance < nextFrameTime { return }
+        guard let attachments = CMSampleBufferGetSampleAttachmentsArray(sampleBuffer, createIfNecessary: false)
+                as? [[SCStreamFrameInfo: Any]],
+              let rawStatus = attachments.first?[.status] as? Int,
+              let status = SCFrameStatus(rawValue: rawStatus), status == .complete || status == .started else { return }
         if asset.status == .unknown {
             guard asset.startWriting() else { fail(); return }
             asset.startSession(atSourceTime: timestamp)
@@ -318,6 +323,11 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
         }
         guard input.append(frame) else { fail(); return }
         lastFrame = frame
+        if limitFrameRate {
+            // Follow the output cadence through small timestamp jitter and skip missed slots.
+            let earliest = timestamp - frameTimingTolerance
+            nextFrameTime = (nextFrameTime.isValid ? max(nextFrameTime, earliest) : timestamp) + frameInterval
+        }
     }
 
     func setPaused(_ paused: Bool, at time: CMTime) {

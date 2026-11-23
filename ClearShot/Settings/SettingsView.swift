@@ -253,7 +253,7 @@ private struct CaptureSettings: View {
             }
         }
         SettingsGroup(title: "Screen recording") {
-            FieldRow(title: "Video frame rate", description: "60 fps reduces recording load. Higher frame rates depend on the display.") {
+            FieldRow(title: "Video frame rate", description: "Applies to the saved video. 60 fps reduces encoding work.") {
                 ShadSelect(selection: $prefs.recordingFrameRate, options: RecordingFrameRate.allCases.map { ($0, $0.label) })
             }
         }
