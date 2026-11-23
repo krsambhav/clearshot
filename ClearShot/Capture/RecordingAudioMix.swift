@@ -6,7 +6,7 @@ nonisolated final class RecordingAudioMix: @unchecked Sendable {
         AVFormatIDKey: Int(kAudioFormatMPEG4AAC),
         AVSampleRateKey: 48_000,
         AVNumberOfChannelsKey: 2,
-        AVEncoderBitRateKey: 192_000,
+        AVEncoderBitRateKey: 256_000,
     ]
 
     private let reader: AVAssetReader

@@ -397,6 +397,16 @@ private struct RecordingControls: View {
                 RecordingDragArea()
                     .accessibilityHidden(true)
             }
+            TimelineView(.periodic(from: .now, by: 1)) { _ in
+                let elapsed = Duration.seconds(recorder.elapsedRecordingTime)
+                    .formatted(.time(pattern: .hourMinuteSecond(padHourToLength: 2, roundFractionalSeconds: .down)))
+                Text(elapsed)
+                    .textStyle(.bodyStrong)
+                    .monospacedDigit()
+                    .frame(minWidth: 64)
+                    .accessibilityLabel("Elapsed recording time")
+                    .accessibilityValue(elapsed)
+            }
             Button(recorder.isPaused ? "Resume" : "Pause", systemImage: recorder.isPaused ? "play.fill" : "pause.fill") {
                 recorder.togglePause()
             }

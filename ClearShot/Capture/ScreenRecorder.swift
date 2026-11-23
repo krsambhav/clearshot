@@ -24,6 +24,10 @@ final class ScreenRecorder {
     var isBusy: Bool { phase != .idle }
     var isPaused: Bool { phase == .paused }
     var canControl: Bool { phase == .recording || phase == .paused }
+    var elapsedRecordingTime: TimeInterval {
+        guard let activeSegmentStart, let session else { return recordedDuration.seconds }
+        return (recordedDuration + max(.zero, Self.currentTime(for: session.stream) - activeSegmentStart)).seconds
+    }
     var controlTitle: String {
         switch phase {
         case .idle, .starting: "Starting…"
@@ -45,6 +49,8 @@ final class ScreenRecorder {
     @ObservationIgnored private var stopRequested = false
     @ObservationIgnored private var onStopped: (() -> Void)?
     @ObservationIgnored private var controls: RecordingControlsPanel?
+    private var activeSegmentStart: CMTime?
+    private var recordedDuration = CMTime.zero
 
     func start(on screen: NSScreen, target: RecordingTarget, audio: RecordingAudioOptions, in folder: URL) {
         guard phase == .idle else { return }
@@ -113,6 +119,7 @@ final class ScreenRecorder {
                 }
                 try await stream.startCapture()
                 guard phase == .starting, activeID == id else { return }
+                activeSegmentStart = Self.currentTime(for: stream)
                 phase = .recording
                 if stopRequested { stop() }
             } catch {
@@ -140,7 +147,13 @@ final class ScreenRecorder {
     func togglePause() {
         guard canControl, let session else { return }
         let resume = isPaused
-        session.writer.setPaused(!resume, at: Self.currentTime(for: session.stream))
+        let time = Self.currentTime(for: session.stream)
+        session.writer.setPaused(!resume, at: time)
+        if resume {
+            activeSegmentStart = time
+        } else {
+            endActiveSegment(at: time)
+        }
         phase = resume ? .recording : .paused
     }
 
@@ -178,8 +191,9 @@ final class ScreenRecorder {
     }
 
     private func finish(_ session: Session, interruption: Error? = nil, streamStopped: Bool = false) {
-        phase = .stopping
         let end = Self.currentTime(for: session.stream)
+        endActiveSegment(at: end)
+        phase = .stopping
         Task {
             if !streamStopped { try? await session.stream.stopCapture() }
             do {
@@ -223,6 +237,8 @@ final class ScreenRecorder {
         controls = nil
         session = nil
         activeID = nil
+        activeSegmentStart = nil
+        recordedDuration = .zero
         phase = .idle
         stopRequested = false
         StatusBarController.shared?.indicateRecording(false)
@@ -233,6 +249,12 @@ final class ScreenRecorder {
 
     private static func currentTime(for stream: SCStream) -> CMTime {
         CMClockGetTime(stream.synchronizationClock ?? CMClockGetHostTimeClock())
+    }
+
+    private func endActiveSegment(at time: CMTime) {
+        guard let start = activeSegmentStart else { return }
+        recordedDuration = recordedDuration + max(.zero, time - start)
+        activeSegmentStart = nil
     }
 
     private static func displayFilter(for screen: NSScreen, excluding controlsID: CGWindowID) async throws -> SCContentFilter {
@@ -317,6 +339,7 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
     private let frameInterval: CMTime
     private let limitFrameRate: Bool
     private let frameTimingTolerance = CMTime(value: 1, timescale: 1000)
+    private let audioTimingTolerance = CMTime(value: 1, timescale: 48_000)
     private var nextFrameTime = CMTime.invalid
     private var lastFrame: CMSampleBuffer?
     private var sessionStart = CMTime.invalid
@@ -406,22 +429,27 @@ private nonisolated final class RecordingWriter: NSObject, SCStreamOutput, @unch
     }
 
     private func appendAudio(_ buffer: CMSampleBuffer, type: SCStreamOutputType, at timestamp: CMTime) {
-        guard asset.status == .writing, timestamp >= sessionStart,
-              timestamp >= (audioEndTimes[type] ?? sessionStart),
+        guard asset.status == .writing,
               let audio = audioInputs[type], audio.isReadyForMoreMediaData else { return }
+
+        let expected = audioEndTimes[type] ?? sessionStart
+        // The capture clock can round neighboring PCM buffers to slightly overlapping times.
+        // Snap sub-sample jitter to the previous end while preserving real gaps.
+        let start = CMTimeAbsoluteValue(timestamp - expected) <= audioTimingTolerance ? expected : timestamp
+        guard start >= expected else { return }
+        let shift = start - buffer.presentationTimeStamp
         do {
-            // Preserve PCM sample durations and shift the whole buffer by the same pause offset as video.
-            let sample = pausedDuration == .zero ? buffer : try CMSampleBuffer(
+            let sample = shift == .zero ? buffer : try CMSampleBuffer(
                 copying: buffer, withNewTiming: buffer.sampleTimingInfos().map {
                     var timing = $0
-                    timing.presentationTimeStamp = timing.presentationTimeStamp - pausedDuration
+                    timing.presentationTimeStamp = timing.presentationTimeStamp + shift
                     if timing.decodeTimeStamp.isNumeric {
-                        timing.decodeTimeStamp = timing.decodeTimeStamp - pausedDuration
+                        timing.decodeTimeStamp = timing.decodeTimeStamp + shift
                     }
                     return timing
                 })
             guard audio.append(sample) else { fail(); return }
-            audioEndTimes[type] = timestamp + (buffer.duration.isNumeric ? buffer.duration : .zero)
+            audioEndTimes[type] = start + (buffer.duration.isNumeric ? buffer.duration : .zero)
         } catch {
             acceptingFrames = false
             onFailure(error)
