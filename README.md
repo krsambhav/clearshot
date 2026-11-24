@@ -46,7 +46,7 @@ brew install xcodegen
 ./scripts/build-and-install.sh   # builds Release, installs to /Applications and launches
 ```
 
-For development, run `xcodegen generate` and open `ClearShot.xcodeproj`. Run `./scripts/test-editor.sh` for editor shortcut, export, crop, and revision regression checks.
+For development, run `xcodegen generate` and open `ClearShot.xcodeproj`. Run `./scripts/test-editor.sh` for editor shortcut, export, crop, and revision regression checks. Run `./scripts/test-ocr.sh` for OCR fallback, timeout recovery, cancellation, and QR detection checks.
 
 In the editor, **Copy** saves the current image to your configured folder, copies it to the clipboard, and closes the window after success. **Save** saves the image and keeps editing open. Failed exports keep the editor open with an error message. Preview thumbnails also save before copying; swipe left with two fingers over a thumbnail to dismiss it without deleting the capture from history.
 

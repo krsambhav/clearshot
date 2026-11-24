@@ -40,7 +40,7 @@ struct EditorRegression {
         model.change { $0.annotations.append(annotation) }
         model.selection = annotation.id
         _ = key("b")
-        check(model.selection == nil && model.tool == .redact, "B clears stale shape selection")
+        check(model.selection == nil && model.tool == .blur, "B clears stale shape selection")
         _ = key("z", modifiers: .command)
         check(model.document.annotations.isEmpty, "Command Z undoes annotation")
         _ = key("z", modifiers: [.command, .shift])

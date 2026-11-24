@@ -1,10 +1,12 @@
 import CoreGraphics
 import CoreML
 import Foundation
+import ImageIO
+import UniformTypeIdentifiers
 import Vision
 
 struct RecognizedText: Sendable {
-    enum Method: String, Sendable {
+    nonisolated enum Method: String, Sendable, Codable {
         case accurate = "Accurate OCR"
         case accurateCPU = "Accurate OCR (CPU retry)"
         case fast = "Fast OCR"
@@ -31,7 +33,8 @@ struct RecognitionOptions: Sendable {
 /// finishes in well under half a second on Apple silicon.
 enum TextRecognizer {
     // Vision performs synchronous work and can spend a long time loading its models.
-    // Separate queues let text, fallback text and barcodes finish independently.
+    // Keep fast text and barcodes responsive while the isolated accurate worker
+    // loads its models. A stalled worker is terminated at the request deadline.
     nonisolated private static let accurateQueue = DispatchQueue(label: "app.clearshot.ocr.accurate", qos: .userInitiated)
     nonisolated private static let fastQueue = DispatchQueue(label: "app.clearshot.ocr.fast", qos: .userInitiated)
     nonisolated private static let codesQueue = DispatchQueue(label: "app.clearshot.ocr.codes", qos: .userInitiated)
@@ -44,7 +47,10 @@ enum TextRecognizer {
         }
     }
 
-    private typealias AccuratePass = (text: String, method: RecognizedText.Method)
+    nonisolated private struct AccuratePass: Sendable, Codable {
+        let text: String
+        let method: RecognizedText.Method
+    }
 
     private enum Event: Sendable {
         case accurate(Result<AccuratePass, Error>)
@@ -55,26 +61,21 @@ enum TextRecognizer {
 
     @concurrent
     nonisolated static func recognize(_ image: CGImage, options: RecognitionOptions) async throws -> RecognizedText {
-        if !options.accurate && !options.detectCodes {
-            let text = try readText(in: image, options: options, level: .fast)
-            return RecognizedText(text: text, codes: [], method: text.isEmpty ? nil : .fast)
-        }
-
         let (events, continuation) = AsyncStream<Event>.makeStream()
+        let worker = AccurateWorker()
+        let fastRequest = VNRecognizeTextRequest()
+        let codesRequest = VNDetectBarcodesRequest()
         let accurate = DispatchWorkItem {
             continuation.yield(.accurate(Result {
-                do {
-                    return (try readText(in: image, options: options, level: .accurate), .accurate)
-                } catch {
-                    return (try readText(in: image, options: options, level: .accurate, preferCPU: true), .accurateCPU)
-                }
+                try worker.recognize(image, options: options)
             }))
         }
         let fast = DispatchWorkItem {
-            continuation.yield(.fast(Result { try readText(in: image, options: options, level: .fast) }))
+            let result = Result { try readText(in: image, options: options, level: .fast, request: fastRequest) }
+            continuation.yield(.fast(result))
         }
         let codes = DispatchWorkItem {
-            continuation.yield(.codes(Result { try readCodes(in: image) }))
+            continuation.yield(.codes(Result { try readCodes(in: image, request: codesRequest) }))
         }
         let timeout = DispatchWorkItem { continuation.yield(.timedOut) }
         defer {
@@ -83,6 +84,9 @@ enum TextRecognizer {
             fast.cancel()
             codes.cancel()
             timeout.cancel()
+            worker.cancel()
+            fastRequest.cancel()
+            codesRequest.cancel()
         }
 
         if options.accurate { accurateQueue.async(execute: accurate) }
@@ -90,50 +94,125 @@ enum TextRecognizer {
         if options.detectCodes { codesQueue.async(execute: codes) }
         DispatchQueue.global().asyncAfter(deadline: .now() + .seconds(5), execute: timeout)
 
-        var accurateResult: Result<AccuratePass, Error>?
-        var fastResult: Result<String, Error>?
-        var codesResult: Result<[String], Error>? = options.detectCodes ? nil : .success([])
-        for await event in events {
-            try Task.checkCancellation()
-            switch event {
-            case .accurate(let result): accurateResult = result
-            case .fast(let result): fastResult = result
-            case .codes(let result): codesResult = result
-            case .timedOut:
-                if let codes = try? codesResult?.get(), !codes.isEmpty {
-                    return RecognizedText(text: "", codes: codes, method: .barcode)
+        return try await withTaskCancellationHandler {
+            var accurateResult: Result<AccuratePass, Error>?
+            var fastResult: Result<String, Error>?
+            var codesResult: Result<[String], Error>? = options.detectCodes ? nil : .success([])
+            for await event in events {
+                try Task.checkCancellation()
+                switch event {
+                case .accurate(let result): accurateResult = result
+                case .fast(let result): fastResult = result
+                case .codes(let result): codesResult = result
+                case .timedOut:
+                    // A completed empty fast pass is still a valid result if the
+                    // accurate model is unavailable. Do not turn blank areas into errors.
+                    if let text = try? fastResult?.get() {
+                        return RecognizedText(text: text, codes: (try? codesResult?.get()) ?? [], method: text.isEmpty ? nil : .fast)
+                    }
+                    if let codes = try? codesResult?.get(), !codes.isEmpty {
+                        return RecognizedText(text: "", codes: codes, method: .barcode)
+                    }
+                    throw RecognitionError.timedOut
                 }
-                throw RecognitionError.timedOut
-            }
 
-            let codes = try? codesResult?.get()
-            if let pass = try? accurateResult?.get(), !pass.text.isEmpty {
-                return RecognizedText(text: pass.text, codes: codes ?? [], method: pass.method)
+                let codes = try? codesResult?.get()
+                if let pass = try? accurateResult?.get(), !pass.text.isEmpty {
+                    return RecognizedText(text: pass.text, codes: codes ?? [], method: pass.method)
+                }
+                if let fastResult {
+                    if let text = try? fastResult.get(), !text.isEmpty {
+                        return RecognizedText(text: text, codes: codes ?? [], method: options.accurate ? .fastFallback : .fast)
+                    }
+                    if let codes, !codes.isEmpty {
+                        return RecognizedText(text: "", codes: codes, method: .barcode)
+                    }
+                    if (!options.accurate || accurateResult != nil), let codesResult {
+                        let text = try (try? accurateResult?.get().text) ?? fastResult.get()
+                        return RecognizedText(text: text, codes: try codesResult.get(), method: nil)
+                    }
+                }
             }
-            if let fastResult {
-                if let text = try? fastResult.get(), !text.isEmpty {
-                    let method: RecognizedText.Method = options.accurate ? .fastFallback : .fast
-                    return RecognizedText(text: text, codes: codes ?? [], method: method)
-                }
-                if let codes, !codes.isEmpty {
-                    return RecognizedText(text: "", codes: codes, method: .barcode)
-                }
-                if (!options.accurate || accurateResult != nil), let codesResult {
-                    let text = try (try? accurateResult?.get().text) ?? fastResult.get()
-                    return RecognizedText(text: text, codes: try codesResult.get(), method: nil)
+            throw CancellationError()
+        } onCancel: {
+            continuation.finish()
+        }
+    }
+
+    /// The accurate model can hang inside Vision and block every later text request.
+    /// Run it in a disposable process so timeouts cannot poison the app's fast OCR.
+    nonisolated private final class AccurateWorker: @unchecked Sendable {
+        private let lock = NSLock()
+        private let process = Process()
+        private var cancelled = false
+
+        nonisolated func recognize(_ image: CGImage, options: RecognitionOptions) throws -> AccuratePass {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                    attributes: [.posixPermissions: 0o700])
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let input = directory.appendingPathComponent("input.png")
+            let output = directory.appendingPathComponent("output.json")
+            guard let destination = CGImageDestinationCreateWithURL(input as CFURL, UTType.png.identifier as CFString, 1, nil) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
+            CGImageDestinationAddImage(destination, image, nil)
+            guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+
+            try lock.withLock {
+                guard !cancelled else { throw CancellationError() }
+                process.executableURL = Bundle.main.executableURL
+                process.arguments = ["--clearshot-ocr-worker", input.path, output.path,
+                                     options.keepLineBreaks ? "1" : "0", options.languageCorrection ? "1" : "0"]
+                process.standardOutput = FileHandle.nullDevice
+                process.standardError = FileHandle.nullDevice
+                try process.run()
+            }
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { throw CocoaError(.executableRuntimeMismatch) }
+            return try JSONDecoder().decode(AccuratePass.self, from: Data(contentsOf: output))
+        }
+
+        nonisolated func cancel() {
+            lock.withLock {
+                cancelled = true
+                if process.isRunning {
+                    // Vision may not respond to cooperative request cancellation.
+                    kill(process.processIdentifier, SIGKILL)
                 }
             }
         }
-        throw CancellationError()
+    }
+
+    /// Called before AppKit starts, only in the isolated accurate-recognition child.
+    nonisolated static func runWorkerIfRequested() -> Bool {
+        let arguments = CommandLine.arguments
+        guard arguments.dropFirst().first == "--clearshot-ocr-worker" else { return false }
+        guard arguments.count == 6,
+              let source = CGImageSourceCreateWithURL(URL(fileURLWithPath: arguments[2]) as CFURL, nil),
+              let image = CGImageSourceCreateImageAtIndex(source, 0, nil) else { exit(1) }
+        let options = RecognitionOptions(keepLineBreaks: arguments[4] == "1", languageCorrection: arguments[5] == "1")
+        do {
+            let pass: AccuratePass
+            do {
+                pass = AccuratePass(text: try readText(in: image, options: options, level: .accurate, request: VNRecognizeTextRequest()), method: .accurate)
+            } catch {
+                pass = AccuratePass(text: try readText(in: image, options: options, level: .accurate, request: VNRecognizeTextRequest(), preferCPU: true), method: .accurateCPU)
+            }
+            try JSONEncoder().encode(pass).write(to: URL(fileURLWithPath: arguments[3]), options: .atomic)
+            return true
+        } catch {
+            exit(1)
+        }
     }
 
     nonisolated private static func readText(
         in image: CGImage,
         options: RecognitionOptions,
         level: VNRequestTextRecognitionLevel,
+        request textRequest: VNRecognizeTextRequest,
         preferCPU: Bool = false
     ) throws -> String {
-        let textRequest = VNRecognizeTextRequest()
         textRequest.recognitionLevel = level
         textRequest.usesLanguageCorrection = options.languageCorrection
         textRequest.automaticallyDetectsLanguage = true
@@ -152,8 +231,7 @@ enum TextRecognizer {
         return layout(textRequest.results ?? [], keepLineBreaks: options.keepLineBreaks)
     }
 
-    nonisolated private static func readCodes(in image: CGImage) throws -> [String] {
-        let request = VNDetectBarcodesRequest()
+    nonisolated private static func readCodes(in image: CGImage, request: VNDetectBarcodesRequest) throws -> [String] {
         try VNImageRequestHandler(cgImage: image).perform([request])
         let codes = (request.results ?? []).compactMap(\.payloadStringValue)
         return Array(NSOrderedSet(array: codes)) as? [String] ?? codes
